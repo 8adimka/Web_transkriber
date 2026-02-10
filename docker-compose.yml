@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: ./backend
+    container_name: transcriber_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/records:/app/records
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+
+  # Простой веб-сервер для фронтенда (можно открыть index.html просто файлом, но так правильнее)
+  frontend:
+    image: nginx:alpine
+    container_name: transcriber_frontend
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+    ports:
+      - "80:80"

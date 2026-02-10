@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Transcriber</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🎙️ Web Transcriber</h1>
+            <p>Захват звука с микрофона и вкладок браузера</p>
+        </header>
+
+        <div class="controls">
+            <div class="device-selection">
+                <label>Микрофон:</label>
+                <select id="micSelect"></select>
+            </div>
+
+            <div class="toggles">
+                <label><input type="checkbox" id="useMic" checked> Микрофон</label>
+                <label><input type="checkbox" id="useSystem" checked> Звук системы/вкладки</label>
+            </div>
+
+            <div class="buttons">
+                <button id="btnStart" class="primary">Начать встречу</button>
+                <button id="btnStop" class="danger" disabled>Остановить</button>
+            </div>
+        </div>
+
+        <div class="status-bar" id="statusBar">Готов к работе</div>
+
+        <div class="transcript-box" id="transcriptBox">
+            <div class="placeholder">Транскрипция появится здесь...</div>
+        </div>
+
+        <div class="download-section" id="downloadSection" style="display: none;">
+            <a id="downloadLink" href="#" class="button success" target="_blank">📥 Скачать транскрипт</a>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
