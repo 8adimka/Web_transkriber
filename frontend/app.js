@@ -72,9 +72,10 @@ async function startRecording() {
             sysSource.connect(destination);
         }
 
-        // Подключение WebSocket
-        // Для локального Docker: ws://localhost:8000/ws/stream
-        const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + 'localhost:8000/ws/stream';
+        // Подключение WebSocket через nginx прокси
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const wsHost = window.location.host; // Используем тот же хост, что и фронтенд
+        const wsUrl = wsProtocol + wsHost + '/ws/stream';
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -169,7 +170,8 @@ function handleServerMessage(data) {
     }
     else if (data.type === "done") {
         statusEl.textContent = "Готово. Файл сохранен.";
-        downloadLink.href = 'http://localhost:8000' + data.file_url;
+        // Используем текущий протокол и хост для скачивания
+        downloadLink.href = window.location.protocol + '//' + window.location.host + data.file_url;
         downloadSection.style.display = 'block';
         ws.close();
     }

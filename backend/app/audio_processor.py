@@ -54,12 +54,9 @@ class FFmpegStreamer:
         """Читает PCM данные из stdout FFmpeg"""
         if self.process and self.process.stdout:
             try:
-                # readexactly гарантирует полный чанк для Deepgram,
-                # кроме случая EOF
-                return await self.process.stdout.readexactly(chunk_size)
-            except asyncio.IncompleteReadError as e:
-                # Если данных меньше чем просили (конец потока), возвращаем что есть
-                return e.partial
+                # Читаем до chunk_size байт, но не блокируемся, если данных меньше
+                data = await self.process.stdout.read(chunk_size)
+                return data
             except Exception as e:
                 logger.error(f"Error reading from FFmpeg: {e}")
                 return b""

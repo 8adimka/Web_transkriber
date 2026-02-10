@@ -2,19 +2,31 @@ services:
   backend:
     build: ./backend
     container_name: transcriber_backend
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./backend/records:/app/records
     env_file:
       - ./backend/.env
     restart: unless-stopped
+    networks:
+      - transcriber-network
 
-  # Простой веб-сервер для фронтенда (можно открыть index.html просто файлом, но так правильнее)
+  # Nginx с HTTPS и проксированием
   frontend:
-    image: nginx:alpine
+    build: ./nginx
     container_name: transcriber_frontend
     volumes:
       - ./frontend:/usr/share/nginx/html
     ports:
       - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - transcriber-network
+
+networks:
+  transcriber-network:
+    driver: bridge
