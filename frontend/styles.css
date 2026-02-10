@@ -57,7 +57,13 @@ button {
     cursor: pointer;
     font-size: 16px;
     font-weight: 600;
-    transition: 0.2s;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .primary {
@@ -74,9 +80,8 @@ button {
     color: white;
 }
 
-.danger:disabled {
-    background-color: #e57373;
-    cursor: not-allowed;
+.danger:hover {
+    background-color: #d32f2f;
 }
 
 .success {
@@ -86,6 +91,13 @@ button {
     display: inline-block;
     padding: 10px 20px;
     border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.success:hover {
+    background-color: #1976D2;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .status-bar {

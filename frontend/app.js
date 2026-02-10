@@ -96,8 +96,8 @@ async function startRecording() {
             // Отправляем чанки каждые 450ms
             mediaRecorder.start(450);
 
-            btnStart.disabled = true;
-            btnStop.disabled = false;
+            btnStart.style.display = 'none';
+            btnStop.style.display = 'inline-block';
             transcriptBox.innerHTML = ''; // Очистка
             downloadSection.style.display = 'none';
         };
@@ -132,8 +132,8 @@ function stopRecording() {
         ws.send(JSON.stringify({ type: "stop" }));
         statusEl.textContent = "Завершение обработки...";
     }
-    btnStart.disabled = false;
-    btnStop.disabled = true;
+    btnStart.style.display = 'inline-block';
+    btnStop.style.display = 'none';
     stopTracks();
 }
 
@@ -173,6 +173,9 @@ function handleServerMessage(data) {
         // Используем текущий протокол и хост для скачивания
         downloadLink.href = window.location.protocol + '//' + window.location.host + data.file_url;
         downloadSection.style.display = 'block';
+        // После завершения показываем кнопку "Начать запись" (уже показана) и скрываем "Остановить"
+        btnStart.style.display = 'inline-block';
+        btnStop.style.display = 'none';
         ws.close();
     }
     else if (data.type === "throttle") {
