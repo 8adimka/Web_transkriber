@@ -23,9 +23,10 @@ class DialogueProcessor:
     4. Простой и надежной архитектурой
     """
 
-    def __init__(self, client_ws, transcript_callback):
+    def __init__(self, client_ws, transcript_callback, language: str = "RU"):
         self.client_ws = client_ws
         self.transcript_callback = transcript_callback
+        self.language = language
 
         # Два отдельных FFmpeg процессора для каждого источника
         self.ffmpeg_me = FFmpegStreamer()
@@ -41,7 +42,7 @@ class DialogueProcessor:
         self.last_speaker: Optional[str] = None
         self.last_segment_end_time: Optional[datetime] = None
         self.merge_threshold_seconds = (
-            2.0  # Объединять реплики, если пауза меньше 2 секунд
+            2.0  # Объединяем реплики, если пауза меньше 2 секунд
         )
 
         # Deepgram соединения
@@ -113,7 +114,7 @@ class DialogueProcessor:
             dg_url = (
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
-                "&model=nova-2&language=ru&punctuate=true&smart_format=true"
+                f"&model=nova-2&language={self.language.lower()}&punctuate=true&smart_format=true"
                 "&endpointing=300&diarize=true&interim_results=true"
             )
 
@@ -125,7 +126,9 @@ class DialogueProcessor:
                 else:
                     self.dg_ws_interlocutor = ws
 
-                logger.info(f"Deepgram connection established for {source}")
+                logger.info(
+                    f"Deepgram connection established for {source} (language: {self.language})"
+                )
 
                 # Задача для отправки данных
                 send_task = asyncio.create_task(
@@ -342,9 +345,9 @@ class DialogueProcessor:
         # Закрываем Deepgram соединения (если они еще открыты) без ожидания
         try:
             if self.dg_ws_me:
-                self.dg_ws_me.close()
+                await self.dg_ws_me.close()
             if self.dg_ws_interlocutor:
-                self.dg_ws_interlocutor.close()
+                await self.dg_ws_interlocutor.close()
         except Exception as e:
             logger.debug(f"Error closing Deepgram connections (expected): {e}")
 

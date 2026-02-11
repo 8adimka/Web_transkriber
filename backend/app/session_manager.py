@@ -84,11 +84,11 @@ class SessionManager:
         if id(websocket) in self.active_sessions:
             del self.active_sessions[id(websocket)]
 
-    async def start_transcription_worker(self, session: Session):
-        """Запускает процессор транскрибации"""
-        logger.info("Creating DialogueProcessor")
+    async def start_transcription_worker(self, session: Session, language: str = "RU"):
+        """Запускает процессор транскрибации с указанным языком"""
+        logger.info(f"Creating DialogueProcessor with language: {language}")
         session.processor = DialogueProcessor(
-            session.websocket, session.append_transcript
+            session.websocket, session.append_transcript, language=language
         )
         session.mode = "transcription"
         logger.info("Starting DialogueProcessor")

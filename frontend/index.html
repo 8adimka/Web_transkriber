@@ -26,21 +26,22 @@
                 <label><input type="checkbox" id="useSystem" checked> Звук системы/вкладки</label>
             </div>
 
-            <div class="language-selection" id="languageSelection" style="display: none;">
-                <label>Язык оригинала:</label>
-                <select id="sourceLang">
-                    <option value="EN">Английский</option>
-                    <option value="ES">Испанский</option>
-                    <option value="FR">Французский</option>
-                    <option value="DE">Немецкий</option>
-                    <option value="IT">Итальянский</option>
-                    <option value="PT">Португальский</option>
-                </select>
-                <label>Перевод на:</label>
-                <select id="targetLang">
-                    <option value="RU">Русский</option>
-                    <option value="EN">Английский</option>
-                </select>
+            <div class="language-settings">
+                <div class="language-setting">
+                    <label>Язык оригинала:</label>
+                    <select id="sourceLang">
+                        <option value="RU">Русский</option>
+                        <option value="EN" selected>Английский</option>
+                        <option value="ES">Испанский</option>
+                    </select>
+                </div>
+                <div class="language-setting">
+                    <label>Перевод на:</label>
+                    <select id="targetLang">
+                        <option value="RU" selected>Русский</option>
+                        <option value="EN">Английский</option>
+                    </select>
+                </div>
             </div>
 
             <div class="buttons">
@@ -58,6 +59,16 @@
 
         <div class="download-section" id="downloadSection" style="display: none;">
             <a id="downloadLink" href="#" class="button success" target="_blank">📥 Скачать транскрипт</a>
+        </div>
+    </div>
+
+    <!-- Структура для PiP окна -->
+    <div id="pipWrapper">
+        <div id="pipContainer" class="pip-container" style="display: none;">
+            <!-- Единый контент с автоскроллом -->
+            <div id="pipContent" class="pip-content">
+                <div class="pip-placeholder">Слушаю...</div>
+            </div>
         </div>
     </div>
 

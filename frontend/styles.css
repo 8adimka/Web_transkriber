@@ -100,32 +100,32 @@ button:hover {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
-.translation {
-    background-color: #9C27B0;
-    color: white;
-}
-
-.translation:hover {
-    background-color: #7B1FA2;
-}
-
-.language-selection {
+.language-settings {
     display: flex;
-    gap: 15px;
-    margin-bottom: 15px;
-    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
 }
 
-.language-selection label {
+.language-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.language-setting label {
     font-weight: 600;
     color: #555;
+    font-size: 14px;
 }
 
-.language-selection select {
-    width: 150px;
+.language-setting select {
+    width: 180px;
     padding: 8px;
     border-radius: 4px;
     border: 1px solid #ccc;
+    background: white;
+    font-size: 14px;
 }
 
 .status-bar {
@@ -166,17 +166,6 @@ button:hover {
     font-style: italic;
 }
 
-.message.translation {
-    border-left: 4px solid #9C27B0;
-    background: #f9f0ff;
-}
-
-.message.interim.translation {
-    border-left: 4px solid #BA68C8;
-    background: #f9f0ff;
-    opacity: 0.8;
-}
-
 .speaker {
     font-weight: bold;
     color: #2196F3;
@@ -185,4 +174,41 @@ button:hover {
 .download-section {
     margin-top: 20px;
     text-align: center;
+}
+
+/* === STYLES FOR PIP WINDOW === */
+
+.pip-container {
+    width: 100%;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.pip-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    /* Центрирование по вертикали */
+    justify-content: center;
+    /* Центрирование по горизонтали */
+    padding: 20px;
+    text-align: center;
+}
+
+.pip-single-text {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #fff;
+    text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+    word-wrap: break-word;
+    /* Перенос длинных слов */
 }

@@ -13,19 +13,24 @@ const btnStop = document.getElementById('btnStop');
 const micSelect = document.getElementById('micSelect');
 const downloadSection = document.getElementById('downloadSection');
 const downloadLink = document.getElementById('downloadLink');
-const languageSelection = document.getElementById('languageSelection');
 const sourceLang = document.getElementById('sourceLang');
 const targetLang = document.getElementById('targetLang');
 const useMicCheckbox = document.getElementById('useMic');
 const useSystemCheckbox = document.getElementById('useSystem');
 
-// Режим работы: 'transcription' или 'translation'
-let currentMode = 'transcription';
+// Элементы PiP
+const pipContainer = document.getElementById('pipContainer');
+const pipContent = document.getElementById('pipContent');
+let pipWindow = null;
 
-// Загрузка списка микрофонов
+// Режим работы
+let currentMode = 'transcription';
+let currentInterim = null;
+
+// Загрузка устройств
 async function loadDevices() {
     try {
-        await navigator.mediaDevices.getUserMedia({ audio: true }); // Request perm
+        await navigator.mediaDevices.getUserMedia({ audio: true });
         const devices = await navigator.mediaDevices.enumerateDevices();
         const mics = devices.filter(d => d.kind === 'audioinput');
         micSelect.innerHTML = mics.map(m => `<option value="${m.deviceId}">${m.label || 'Microphone ' + m.deviceId}</option>`).join('');
@@ -36,26 +41,88 @@ async function loadDevices() {
 }
 loadDevices();
 
+// Управление UI состоянием
+function setRunningUi(isRunning) {
+    btnStart.style.display = isRunning ? 'none' : 'inline-block';
+    btnStartTranslation.style.display = isRunning ? 'none' : 'inline-block';
+    btnStop.style.display = isRunning ? 'inline-block' : 'none';
+
+    micSelect.disabled = isRunning;
+    sourceLang.disabled = isRunning;
+    targetLang.disabled = isRunning;
+}
+
 btnStart.onclick = startRecording;
 btnStartTranslation.onclick = startTranslation;
 btnStop.onclick = stopRecording;
 
-// Обработчики изменения чекбоксов для режима перевода
 useMicCheckbox.addEventListener('change', function () {
     if (currentMode === 'translation') {
-        // В режиме перевода микрофон должен быть отключен
         this.checked = false;
-        alert('В режиме перевода микрофон отключен. Используйте только звук системы/вкладки.');
+        alert('В режиме перевода микрофон отключен.');
     }
 });
 
 useSystemCheckbox.addEventListener('change', function () {
     if (currentMode === 'translation' && !this.checked) {
-        // В режиме перевода системный звук должен быть включен
         this.checked = true;
-        alert('В режиме перевода требуется звук системы/вкладки.');
+        alert('В режиме перевода требуется звук системы.');
     }
 });
+
+// --- Логика Picture-in-Picture ---
+
+async function openPiP() {
+    if (!("documentPictureInPicture" in window)) {
+        alert("Ваш браузер не поддерживает Document Picture-in-Picture API (Chrome 116+).");
+        return;
+    }
+
+    try {
+        pipWindow = await documentPictureInPicture.requestWindow({
+            width: 600,
+            height: 150, // Небольшая высота для 1-2 строк текста
+        });
+
+        // ВАЖНО: Сбрасываем стили body у PiP окна, чтобы убрать padding основного окна
+        pipWindow.document.body.style.margin = "0";
+        pipWindow.document.body.style.padding = "0";
+        pipWindow.document.body.style.display = "block"; // Отключаем flex основного окна
+        pipWindow.document.body.style.background = "black";
+
+        // Копируем стили
+        [...document.styleSheets].forEach((styleSheet) => {
+            try {
+                const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+                const style = document.createElement('style');
+                style.textContent = cssRules;
+                pipWindow.document.head.appendChild(style);
+            } catch (e) {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.type = styleSheet.type;
+                link.media = styleSheet.media;
+                link.href = styleSheet.href;
+                pipWindow.document.head.appendChild(link);
+            }
+        });
+
+        pipWindow.document.body.appendChild(pipContainer);
+        pipContainer.style.display = 'flex';
+
+        pipWindow.addEventListener("pagehide", (event) => {
+            document.getElementById('pipWrapper').appendChild(pipContainer);
+            pipContainer.style.display = 'none';
+            pipWindow = null;
+        });
+
+    } catch (err) {
+        console.error("Не удалось открыть PiP окно:", err);
+    }
+}
+
+
+// --- Основные функции ---
 
 async function startRecording() {
     const useMic = document.getElementById('useMic').checked;
@@ -66,255 +133,72 @@ async function startRecording() {
         return;
     }
 
+    setRunningUi(true);
     currentMode = 'transcription';
-    // Скрываем выбор языка в режиме транскрибации
-    languageSelection.style.display = 'none';
 
     try {
         statusEl.textContent = "Инициализация...";
         audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
 
-        // Подключение WebSocket через nginx прокси
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const wsHost = window.location.host; // Используем тот же хост, что и фронтенд
-        const wsUrl = wsProtocol + wsHost + '/ws/stream';
-        ws = new WebSocket(wsUrl);
+        setupWebSocket(false);
 
-        ws.onopen = async () => {
-            statusEl.textContent = "Соединение установлено. Запись...";
-            ws.send(JSON.stringify({ type: "start", sample_rate: audioContext.sampleRate }));
-
-            // 1. Захват микрофона
-            if (useMic) {
-                micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { deviceId: micSelect.value ? { exact: micSelect.value } : undefined }
-                });
-                const micSource = audioContext.createMediaStreamSource(micStream);
-                micSource.connect(destination);
-
-                // Проверяем поддерживаемые MIME типы
-                const mimeType = 'audio/webm;codecs=opus';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    console.warn(`MIME type ${mimeType} not supported, using default`);
-                }
-
-                // Создаем MediaRecorder для микрофона
-                micRecorder = new MediaRecorder(micStream, {
-                    mimeType: mimeType
-                });
-
-                micRecorder.ondataavailable = async (event) => {
-                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                        console.log(`Mic chunk size: ${event.data.size}`);
-                        // Префикс 0x00 для микрофона
-                        const arrayBuffer = await event.data.arrayBuffer();
-                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
-                        prefixedData[0] = 0x00; // Маркер источника: 0 = микрофон
-                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
-                        ws.send(prefixedData);
-                    }
-                };
-
-                micRecorder.start(450);
-                console.log("Mic recorder started");
-            }
-
-            // 2. Захват системы (getDisplayMedia)
-            if (useSystem) {
-                // Внимание: Чтобы захватить аудио, пользователь должен поставить галочку "Share audio" в диалоге браузера
-                systemStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true, // Видео обязательно для getDisplayMedia, но мы его игнорируем
-                    audio: true
-                });
-
-                // Если пользователь выбрал вкладку без аудио
-                const audioTrack = systemStream.getAudioTracks()[0];
-                if (!audioTrack) {
-                    alert("Выбранный источник не содержит аудио. Убедитесь, что поставили галочку 'Share audio'");
-                    stopTracks();
-                    return;
-                }
-
-                // Создаем MediaStream только с аудио дорожкой для записи
-                const systemAudioStream = new MediaStream([audioTrack]);
-                const sysSource = audioContext.createMediaStreamSource(systemStream);
-                sysSource.connect(destination);
-
-                // Проверяем поддерживаемые MIME типы
-                const mimeType = 'audio/webm;codecs=opus';
-
-                // Создаем MediaRecorder для системного звука
-                systemRecorder = new MediaRecorder(systemAudioStream, {
-                    mimeType: mimeType
-                });
-
-                systemRecorder.ondataavailable = async (event) => {
-                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                        console.log(`System chunk size: ${event.data.size}`);
-                        // Префикс 0x01 для системного звука
-                        const arrayBuffer = await event.data.arrayBuffer();
-                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
-                        prefixedData[0] = 0x01; // Маркер источника: 1 = системный звук
-                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
-                        ws.send(prefixedData);
-                    }
-                };
-
-                systemRecorder.start(450);
-                console.log("System recorder started");
-            }
-
-            btnStart.style.display = 'none';
-            btnStop.style.display = 'inline-block';
-            transcriptBox.innerHTML = ''; // Очистка
-            downloadSection.style.display = 'none';
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleServerMessage(data);
-        };
-
-        ws.onclose = () => {
-            statusEl.textContent = "Соединение закрыто";
-            stopTracks();
-        };
-
-        ws.onerror = (e) => {
-            console.error("WebSocket error:", e);
-            statusEl.textContent = "Ошибка WebSocket";
-        };
+        if (useMic) await setupMicStream(destination);
+        if (useSystem) {
+            const success = await setupSystemStream(destination);
+            if (!success) return;
+        }
 
     } catch (err) {
         console.error("Error starting:", err);
-        statusEl.textContent = "Ошибка запуска: " + err.message;
-        stopTracks();
+        statusEl.textContent = "Ошибка: " + err.message;
+        stopRecording();
     }
 }
 
 async function startTranslation() {
-    // В режиме перевода микрофон отключаем, системный звук обязателен
+    setRunningUi(true);
+    currentMode = 'translation';
+
     useMicCheckbox.checked = false;
     useSystemCheckbox.checked = true;
 
-    const useSystem = true; // Всегда true для перевода
-    currentMode = 'translation';
-
-    // Показываем выбор языка
-    languageSelection.style.display = 'flex';
-
     try {
+        await openPiP();
+
         statusEl.textContent = "Инициализация перевода...";
         audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
 
-        // Подключение WebSocket через nginx прокси
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const wsHost = window.location.host; // Используем тот же хост, что и фронтенд
-        const wsUrl = wsProtocol + wsHost + '/ws/stream';
-        ws = new WebSocket(wsUrl);
+        setupWebSocket(true);
 
-        ws.onopen = async () => {
-            statusEl.textContent = "Соединение установлено. Перевод...";
-
-            // Отправляем команду начала перевода с выбранными языками
-            ws.send(JSON.stringify({
-                type: "start_translation",
-                source_lang: sourceLang.value,
-                target_lang: targetLang.value,
-                sample_rate: audioContext.sampleRate
-            }));
-
-            // В режиме перевода используем только системный звук
-            if (useSystem) {
-                // Внимание: Чтобы захватить аудио, пользователь должен поставить галочку "Share audio" в диалоге браузера
-                systemStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true, // Видео обязательно для getDisplayMedia, но мы его игнорируем
-                    audio: true
-                });
-
-                // Если пользователь выбрал вкладку без аудио
-                const audioTrack = systemStream.getAudioTracks()[0];
-                if (!audioTrack) {
-                    alert("Выбранный источник не содержит аудио. Убедитесь, что поставили галочку 'Share audio'");
-                    stopTracks();
-                    return;
-                }
-
-                // Создаем MediaStream только с аудио дорожкой для записи
-                const systemAudioStream = new MediaStream([audioTrack]);
-                const sysSource = audioContext.createMediaStreamSource(systemStream);
-                sysSource.connect(destination);
-
-                // Проверяем поддерживаемые MIME типы
-                const mimeType = 'audio/webm;codecs=opus';
-
-                // Создаем MediaRecorder для системного звука
-                systemRecorder = new MediaRecorder(systemAudioStream, {
-                    mimeType: mimeType
-                });
-
-                systemRecorder.ondataavailable = async (event) => {
-                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                        console.log(`System chunk size: ${event.data.size}`);
-                        // Префикс 0x01 для системного звука
-                        const arrayBuffer = await event.data.arrayBuffer();
-                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
-                        prefixedData[0] = 0x01; // Маркер источника: 1 = системный звук
-                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
-                        ws.send(prefixedData);
-                    }
-                };
-
-                systemRecorder.start(450);
-                console.log("System recorder started");
-            }
-
-            btnStart.style.display = 'none';
-            btnStartTranslation.style.display = 'none';
-            btnStop.style.display = 'inline-block';
-            transcriptBox.innerHTML = ''; // Очистка
-            downloadSection.style.display = 'none';
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleServerMessage(data);
-        };
-
-        ws.onclose = () => {
-            statusEl.textContent = "Соединение закрыто";
-            stopTracks();
-        };
-
-        ws.onerror = (e) => {
-            console.error("WebSocket error:", e);
-            statusEl.textContent = "Ошибка WebSocket";
-        };
+        const success = await setupSystemStream(destination);
+        if (!success) return;
 
     } catch (err) {
-        console.error("Error starting:", err);
-        statusEl.textContent = "Ошибка запуска: " + err.message;
-        stopTracks();
+        console.error("Error starting translation:", err);
+        statusEl.textContent = "Ошибка: " + err.message;
+        stopRecording();
     }
 }
 
 function stopRecording() {
-    if (micRecorder && micRecorder.state !== 'inactive') {
-        micRecorder.stop();
-    }
-    if (systemRecorder && systemRecorder.state !== 'inactive') {
-        systemRecorder.stop();
-    }
+    if (micRecorder && micRecorder.state !== 'inactive') micRecorder.stop();
+    if (systemRecorder && systemRecorder.state !== 'inactive') systemRecorder.stop();
+
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "stop" }));
-        statusEl.textContent = "Завершение обработки...";
+        statusEl.textContent = "Завершение...";
     }
-    btnStart.style.display = 'inline-block';
-    btnStartTranslation.style.display = 'inline-block';
-    btnStop.style.display = 'none';
+
     stopTracks();
+    setRunningUi(false);
+
+    if (pipWindow) {
+        pipWindow.close();
+        pipWindow = null;
+    }
+    pipContainer.style.display = 'none';
 }
 
 function stopTracks() {
@@ -323,104 +207,159 @@ function stopTracks() {
     if (audioContext) audioContext.close();
 }
 
-let currentInterim = null;
+// --- Хелперы ---
+
+function setupWebSocket(isTranslation) {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsUrl = wsProtocol + window.location.host + '/ws/stream';
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+        statusEl.textContent = isTranslation ? "Перевод активен..." : "Запись идет...";
+
+        const msg = isTranslation ? {
+            type: "start_translation",
+            source_lang: sourceLang.value,
+            target_lang: targetLang.value,
+            sample_rate: audioContext.sampleRate
+        } : {
+            type: "start",
+            language: sourceLang.value,
+            sample_rate: audioContext.sampleRate
+        };
+
+        ws.send(JSON.stringify(msg));
+
+        if (!isTranslation) transcriptBox.innerHTML = '';
+        downloadSection.style.display = 'none';
+
+        // Очищаем PiP при старте
+        pipContent.innerHTML = '<div class="pip-single-text" style="color: #666;">Слушаю...</div>';
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleServerMessage(data);
+    };
+
+    ws.onclose = () => {
+        if (statusEl.textContent !== "Готово. Файл сохранен.") {
+            statusEl.textContent = "Соединение закрыто";
+        }
+        stopRecording();
+    };
+
+    ws.onerror = (e) => console.error("WS Error", e);
+}
+
+async function setupMicStream(destination) {
+    micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: micSelect.value ? { exact: micSelect.value } : undefined }
+    });
+    const micSource = audioContext.createMediaStreamSource(micStream);
+    micSource.connect(destination);
+
+    micRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' });
+    micRecorder.ondataavailable = async (e) => {
+        if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            const buffer = await e.data.arrayBuffer();
+            const prefixed = new Uint8Array(buffer.byteLength + 1);
+            prefixed[0] = 0x00;
+            prefixed.set(new Uint8Array(buffer), 1);
+            ws.send(prefixed);
+        }
+    };
+    micRecorder.start(450);
+}
+
+async function setupSystemStream(destination) {
+    try {
+        systemStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch (e) {
+        stopRecording();
+        return false;
+    }
+
+    const audioTrack = systemStream.getAudioTracks()[0];
+    if (!audioTrack) {
+        alert("Нет аудио! Поставьте галочку 'Share audio'.");
+        stopTracks();
+        stopRecording();
+        return false;
+    }
+
+    systemStream.getVideoTracks()[0].onended = () => {
+        stopRecording();
+    };
+
+    const sysSource = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+    sysSource.connect(destination);
+
+    systemRecorder = new MediaRecorder(new MediaStream([audioTrack]), { mimeType: 'audio/webm;codecs=opus' });
+    systemRecorder.ondataavailable = async (e) => {
+        if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            const buffer = await e.data.arrayBuffer();
+            const prefixed = new Uint8Array(buffer.byteLength + 1);
+            prefixed[0] = 0x01;
+            prefixed.set(new Uint8Array(buffer), 1);
+            ws.send(prefixed);
+        }
+    };
+    systemRecorder.start(450);
+    return true;
+}
+
+// --- Обработка сообщений ---
 
 function handleServerMessage(data) {
     if (data.type === "transcript") {
-        // Добавляем метку источника, если есть
-        const speaker = data.speaker ? (data.speaker === 'me' ? '🗣 Я' : '👥 Собеседник') : '';
-        const speakerPrefix = speaker ? `<span class="speaker">${speaker}:</span> ` : '';
-
-        if (data.is_final) {
-            // Удаляем временный, добавляем финальный
-            if (currentInterim) {
-                currentInterim.remove();
-                currentInterim = null;
-            }
-            const div = document.createElement('div');
-            div.className = 'message';
-            div.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${speakerPrefix}${data.text}`;
-            transcriptBox.appendChild(div);
-        } else {
-            // Обновляем временный
-            if (!currentInterim) {
-                currentInterim = document.createElement('div');
-                currentInterim.className = 'message interim';
-                transcriptBox.appendChild(currentInterim);
-            }
-            currentInterim.innerHTML = `... ${speakerPrefix}${data.text}`;
-        }
-        transcriptBox.scrollTop = transcriptBox.scrollHeight;
-    }
-    else if (data.type === "translation") {
-        // Обработка перевода
-        const langInfo = `[${data.source_lang}→${data.target_lang}]`;
-        const originalText = data.original ? `<small style="color: #666;">${data.original}</small><br>` : '';
-
-        if (data.is_final) {
-            // Удаляем временный, добавляем финальный
-            if (currentInterim) {
-                currentInterim.remove();
-                currentInterim = null;
-            }
-            const div = document.createElement('div');
-            div.className = 'message translation';
-            div.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${langInfo}<br>${originalText}${data.translated}`;
-            transcriptBox.appendChild(div);
-        } else {
-            // Обновляем временный
-            if (!currentInterim) {
-                currentInterim = document.createElement('div');
-                currentInterim.className = 'message interim translation';
-                transcriptBox.appendChild(currentInterim);
-            }
-            currentInterim.innerHTML = `... ${langInfo} ${data.translated}`;
-        }
-        transcriptBox.scrollTop = transcriptBox.scrollHeight;
-    }
-    else if (data.type === "done") {
+        renderTranscript(data);
+    } else if (data.type === "translation") {
+        renderTranslation(data);
+    } else if (data.type === "done") {
         statusEl.textContent = "Готово. Файл сохранен.";
-        // Используем текущий протокол и хост для скачивания
         if (data.file_url) {
-            downloadLink.href = window.location.protocol + '//' + window.location.host + data.file_url;
+            downloadLink.href = data.file_url;
             downloadSection.style.display = 'block';
-        } else {
-            downloadSection.style.display = 'none';
         }
-        // После завершения показываем кнопки "Начать запись" и "Включить переводчик"
-        btnStart.style.display = 'inline-block';
-        btnStartTranslation.style.display = 'inline-block';
-        btnStop.style.display = 'none';
-        // Скрываем выбор языка
-        languageSelection.style.display = 'none';
-        // Сбрасываем режим
-        currentMode = 'transcription';
-        ws.close();
-    }
-    else if (data.type === "throttle") {
-        console.warn("Server asked to slow down");
-        // В реальном приложении можно увеличить интервал mediaRecorder, 
-        // но mediaRecorder.requestData() не меняет интервал динамически легко без перезапуска.
-    }
-    else if (data.type === "error") {
+        stopRecording();
+    } else if (data.type === "error") {
         alert("Server Error: " + data.message);
     }
 }
 
-function formatTime(timestamp) {
-    // Если timestamp - это строка в формате HH:MM:SS, просто возвращаем ее
-    if (typeof timestamp === 'string' && timestamp.includes(':')) {
-        return timestamp;
-    }
+function renderTranscript(data) {
+    const speaker = data.speaker ? (data.speaker === 'me' ? '🗣 Я' : '👥 Собеседник') : '';
+    const text = `<span class="speaker">${speaker}</span> ${data.text}`;
 
-    // Если timestamp - это число (секунды), преобразуем в MM:SS
-    const seconds = Number(timestamp);
-    if (!isNaN(seconds)) {
-        const min = Math.floor(seconds / 60);
-        const sec = Math.floor(seconds % 60);
-        return `${min}:${sec < 10 ? '0' + sec : sec}`;
+    if (data.is_final) {
+        if (currentInterim) { currentInterim.remove(); currentInterim = null; }
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${text}`;
+        transcriptBox.appendChild(div);
+    } else {
+        if (!currentInterim) {
+            currentInterim = document.createElement('div');
+            currentInterim.className = 'message interim';
+            transcriptBox.appendChild(currentInterim);
+        }
+        currentInterim.innerHTML = `... ${text}`;
     }
+    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+}
 
-    // Если не можем распарсить, возвращаем исходное значение
-    return timestamp;
+function renderTranslation(data) {
+    // Просто заменяем всё содержимое на новую фразу
+    // Одинаковый стиль для final и interim, чтобы не дергалось
+    pipContent.innerHTML = `<div class="pip-single-text">${data.translated}</div>`;
+}
+
+function formatTime(ts) {
+    if (typeof ts === 'string' && ts.includes(':')) return ts;
+    const s = Number(ts);
+    if (isNaN(s)) return ts;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
 }
