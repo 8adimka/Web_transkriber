@@ -8,10 +8,19 @@ let systemStream = null;
 const statusEl = document.getElementById('statusBar');
 const transcriptBox = document.getElementById('transcriptBox');
 const btnStart = document.getElementById('btnStart');
+const btnStartTranslation = document.getElementById('btnStartTranslation');
 const btnStop = document.getElementById('btnStop');
 const micSelect = document.getElementById('micSelect');
 const downloadSection = document.getElementById('downloadSection');
 const downloadLink = document.getElementById('downloadLink');
+const languageSelection = document.getElementById('languageSelection');
+const sourceLang = document.getElementById('sourceLang');
+const targetLang = document.getElementById('targetLang');
+const useMicCheckbox = document.getElementById('useMic');
+const useSystemCheckbox = document.getElementById('useSystem');
+
+// Режим работы: 'transcription' или 'translation'
+let currentMode = 'transcription';
 
 // Загрузка списка микрофонов
 async function loadDevices() {
@@ -28,7 +37,25 @@ async function loadDevices() {
 loadDevices();
 
 btnStart.onclick = startRecording;
+btnStartTranslation.onclick = startTranslation;
 btnStop.onclick = stopRecording;
+
+// Обработчики изменения чекбоксов для режима перевода
+useMicCheckbox.addEventListener('change', function () {
+    if (currentMode === 'translation') {
+        // В режиме перевода микрофон должен быть отключен
+        this.checked = false;
+        alert('В режиме перевода микрофон отключен. Используйте только звук системы/вкладки.');
+    }
+});
+
+useSystemCheckbox.addEventListener('change', function () {
+    if (currentMode === 'translation' && !this.checked) {
+        // В режиме перевода системный звук должен быть включен
+        this.checked = true;
+        alert('В режиме перевода требуется звук системы/вкладки.');
+    }
+});
 
 async function startRecording() {
     const useMic = document.getElementById('useMic').checked;
@@ -38,6 +65,10 @@ async function startRecording() {
         alert("Выберите хотя бы один источник звука");
         return;
     }
+
+    currentMode = 'transcription';
+    // Скрываем выбор языка в режиме транскрибации
+    languageSelection.style.display = 'none';
 
     try {
         statusEl.textContent = "Инициализация...";
@@ -162,6 +193,113 @@ async function startRecording() {
     }
 }
 
+async function startTranslation() {
+    // В режиме перевода микрофон отключаем, системный звук обязателен
+    useMicCheckbox.checked = false;
+    useSystemCheckbox.checked = true;
+
+    const useSystem = true; // Всегда true для перевода
+    currentMode = 'translation';
+
+    // Показываем выбор языка
+    languageSelection.style.display = 'flex';
+
+    try {
+        statusEl.textContent = "Инициализация перевода...";
+        audioContext = new AudioContext();
+        const destination = audioContext.createMediaStreamDestination();
+
+        // Подключение WebSocket через nginx прокси
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const wsHost = window.location.host; // Используем тот же хост, что и фронтенд
+        const wsUrl = wsProtocol + wsHost + '/ws/stream';
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = async () => {
+            statusEl.textContent = "Соединение установлено. Перевод...";
+
+            // Отправляем команду начала перевода с выбранными языками
+            ws.send(JSON.stringify({
+                type: "start_translation",
+                source_lang: sourceLang.value,
+                target_lang: targetLang.value,
+                sample_rate: audioContext.sampleRate
+            }));
+
+            // В режиме перевода используем только системный звук
+            if (useSystem) {
+                // Внимание: Чтобы захватить аудио, пользователь должен поставить галочку "Share audio" в диалоге браузера
+                systemStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true, // Видео обязательно для getDisplayMedia, но мы его игнорируем
+                    audio: true
+                });
+
+                // Если пользователь выбрал вкладку без аудио
+                const audioTrack = systemStream.getAudioTracks()[0];
+                if (!audioTrack) {
+                    alert("Выбранный источник не содержит аудио. Убедитесь, что поставили галочку 'Share audio'");
+                    stopTracks();
+                    return;
+                }
+
+                // Создаем MediaStream только с аудио дорожкой для записи
+                const systemAudioStream = new MediaStream([audioTrack]);
+                const sysSource = audioContext.createMediaStreamSource(systemStream);
+                sysSource.connect(destination);
+
+                // Проверяем поддерживаемые MIME типы
+                const mimeType = 'audio/webm;codecs=opus';
+
+                // Создаем MediaRecorder для системного звука
+                systemRecorder = new MediaRecorder(systemAudioStream, {
+                    mimeType: mimeType
+                });
+
+                systemRecorder.ondataavailable = async (event) => {
+                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                        console.log(`System chunk size: ${event.data.size}`);
+                        // Префикс 0x01 для системного звука
+                        const arrayBuffer = await event.data.arrayBuffer();
+                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
+                        prefixedData[0] = 0x01; // Маркер источника: 1 = системный звук
+                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
+                        ws.send(prefixedData);
+                    }
+                };
+
+                systemRecorder.start(450);
+                console.log("System recorder started");
+            }
+
+            btnStart.style.display = 'none';
+            btnStartTranslation.style.display = 'none';
+            btnStop.style.display = 'inline-block';
+            transcriptBox.innerHTML = ''; // Очистка
+            downloadSection.style.display = 'none';
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            handleServerMessage(data);
+        };
+
+        ws.onclose = () => {
+            statusEl.textContent = "Соединение закрыто";
+            stopTracks();
+        };
+
+        ws.onerror = (e) => {
+            console.error("WebSocket error:", e);
+            statusEl.textContent = "Ошибка WebSocket";
+        };
+
+    } catch (err) {
+        console.error("Error starting:", err);
+        statusEl.textContent = "Ошибка запуска: " + err.message;
+        stopTracks();
+    }
+}
+
 function stopRecording() {
     if (micRecorder && micRecorder.state !== 'inactive') {
         micRecorder.stop();
@@ -174,6 +312,7 @@ function stopRecording() {
         statusEl.textContent = "Завершение обработки...";
     }
     btnStart.style.display = 'inline-block';
+    btnStartTranslation.style.display = 'inline-block';
     btnStop.style.display = 'none';
     stopTracks();
 }
@@ -213,14 +352,49 @@ function handleServerMessage(data) {
         }
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
     }
+    else if (data.type === "translation") {
+        // Обработка перевода
+        const langInfo = `[${data.source_lang}→${data.target_lang}]`;
+        const originalText = data.original ? `<small style="color: #666;">${data.original}</small><br>` : '';
+
+        if (data.is_final) {
+            // Удаляем временный, добавляем финальный
+            if (currentInterim) {
+                currentInterim.remove();
+                currentInterim = null;
+            }
+            const div = document.createElement('div');
+            div.className = 'message translation';
+            div.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${langInfo}<br>${originalText}${data.translated}`;
+            transcriptBox.appendChild(div);
+        } else {
+            // Обновляем временный
+            if (!currentInterim) {
+                currentInterim = document.createElement('div');
+                currentInterim.className = 'message interim translation';
+                transcriptBox.appendChild(currentInterim);
+            }
+            currentInterim.innerHTML = `... ${langInfo} ${data.translated}`;
+        }
+        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+    }
     else if (data.type === "done") {
         statusEl.textContent = "Готово. Файл сохранен.";
         // Используем текущий протокол и хост для скачивания
-        downloadLink.href = window.location.protocol + '//' + window.location.host + data.file_url;
-        downloadSection.style.display = 'block';
-        // После завершения показываем кнопку "Начать запись" (уже показана) и скрываем "Остановить"
+        if (data.file_url) {
+            downloadLink.href = window.location.protocol + '//' + window.location.host + data.file_url;
+            downloadSection.style.display = 'block';
+        } else {
+            downloadSection.style.display = 'none';
+        }
+        // После завершения показываем кнопки "Начать запись" и "Включить переводчик"
         btnStart.style.display = 'inline-block';
+        btnStartTranslation.style.display = 'inline-block';
         btnStop.style.display = 'none';
+        // Скрываем выбор языка
+        languageSelection.style.display = 'none';
+        // Сбрасываем режим
+        currentMode = 'transcription';
         ws.close();
     }
     else if (data.type === "throttle") {

@@ -27,8 +27,16 @@ async def ws_stream(websocket: WebSocket):
                     msg_type = data.get("type")
 
                     if msg_type == "start":
-                        logger.info("Command START received")
-                        await sessions.start_worker(session)
+                        logger.info("Command START received (transcription mode)")
+                        await sessions.start_transcription_worker(session)
+
+                    elif msg_type == "start_translation":
+                        logger.info("Command START_TRANSLATION received")
+                        source_lang = data.get("source_lang", "EN")
+                        target_lang = data.get("target_lang", "RU")
+                        await sessions.start_translation_worker(
+                            session, source_lang, target_lang
+                        )
 
                     elif msg_type == "stop":
                         logger.info("Command STOP received")

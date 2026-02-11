@@ -26,8 +26,26 @@
                 <label><input type="checkbox" id="useSystem" checked> Звук системы/вкладки</label>
             </div>
 
+            <div class="language-selection" id="languageSelection" style="display: none;">
+                <label>Язык оригинала:</label>
+                <select id="sourceLang">
+                    <option value="EN">Английский</option>
+                    <option value="ES">Испанский</option>
+                    <option value="FR">Французский</option>
+                    <option value="DE">Немецкий</option>
+                    <option value="IT">Итальянский</option>
+                    <option value="PT">Португальский</option>
+                </select>
+                <label>Перевод на:</label>
+                <select id="targetLang">
+                    <option value="RU">Русский</option>
+                    <option value="EN">Английский</option>
+                </select>
+            </div>
+
             <div class="buttons">
-                <button id="btnStart" class="primary">Начать запись</button>
+                <button id="btnStart" class="primary">Включить транскрибер</button>
+                <button id="btnStartTranslation" class="success">Включить переводчик</button>
                 <button id="btnStop" class="danger" style="display: none;">Остановить</button>
             </div>
         </div>
