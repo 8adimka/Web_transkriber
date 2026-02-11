@@ -40,7 +40,8 @@ async def ws_stream(websocket: WebSocket):
 
             elif "bytes" in message:
                 # Аудио данные
-                if session.active and session.worker:
+                logger.info(f"Received binary data, size: {len(message['bytes'])}")
+                if session.active and session.processor:
                     await sessions.handle_audio_chunk(session, message["bytes"])
 
     except WebSocketDisconnect:

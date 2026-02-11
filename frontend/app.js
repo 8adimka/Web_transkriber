@@ -1,5 +1,6 @@
 let ws = null;
-let mediaRecorder = null;
+let micRecorder = null;
+let systemRecorder = null;
 let audioContext = null;
 let micStream = null;
 let systemStream = null;
@@ -43,58 +44,95 @@ async function startRecording() {
         audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
 
-        // 1. Захват микрофона
-        if (useMic) {
-            micStream = await navigator.mediaDevices.getUserMedia({
-                audio: { deviceId: micSelect.value ? { exact: micSelect.value } : undefined }
-            });
-            const micSource = audioContext.createMediaStreamSource(micStream);
-            micSource.connect(destination);
-        }
-
-        // 2. Захват системы (getDisplayMedia)
-        if (useSystem) {
-            // Внимание: Чтобы захватить аудио, пользователь должен поставить галочку "Share audio" в диалоге браузера
-            systemStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true, // Видео обязательно для getDisplayMedia, но мы его игнорируем
-                audio: true
-            });
-
-            // Если пользователь выбрал вкладку без аудио
-            const audioTrack = systemStream.getAudioTracks()[0];
-            if (!audioTrack) {
-                alert("Выбранный источник не содержит аудио. Убедитесь, что поставили галочку 'Share audio'");
-                stopTracks();
-                return;
-            }
-
-            const sysSource = audioContext.createMediaStreamSource(systemStream);
-            sysSource.connect(destination);
-        }
-
         // Подключение WebSocket через nginx прокси
         const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         const wsHost = window.location.host; // Используем тот же хост, что и фронтенд
         const wsUrl = wsProtocol + wsHost + '/ws/stream';
         ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
+        ws.onopen = async () => {
             statusEl.textContent = "Соединение установлено. Запись...";
             ws.send(JSON.stringify({ type: "start", sample_rate: audioContext.sampleRate }));
 
-            // Настройка MediaRecorder (Opus/WebM)
-            mediaRecorder = new MediaRecorder(destination.stream, {
-                mimeType: 'audio/webm;codecs=opus'
-            });
+            // 1. Захват микрофона
+            if (useMic) {
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: micSelect.value ? { exact: micSelect.value } : undefined }
+                });
+                const micSource = audioContext.createMediaStreamSource(micStream);
+                micSource.connect(destination);
 
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                    ws.send(event.data);
+                // Проверяем поддерживаемые MIME типы
+                const mimeType = 'audio/webm;codecs=opus';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    console.warn(`MIME type ${mimeType} not supported, using default`);
                 }
-            };
 
-            // Отправляем чанки каждые 450ms
-            mediaRecorder.start(450);
+                // Создаем MediaRecorder для микрофона
+                micRecorder = new MediaRecorder(micStream, {
+                    mimeType: mimeType
+                });
+
+                micRecorder.ondataavailable = async (event) => {
+                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                        console.log(`Mic chunk size: ${event.data.size}`);
+                        // Префикс 0x00 для микрофона
+                        const arrayBuffer = await event.data.arrayBuffer();
+                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
+                        prefixedData[0] = 0x00; // Маркер источника: 0 = микрофон
+                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
+                        ws.send(prefixedData);
+                    }
+                };
+
+                micRecorder.start(450);
+                console.log("Mic recorder started");
+            }
+
+            // 2. Захват системы (getDisplayMedia)
+            if (useSystem) {
+                // Внимание: Чтобы захватить аудио, пользователь должен поставить галочку "Share audio" в диалоге браузера
+                systemStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true, // Видео обязательно для getDisplayMedia, но мы его игнорируем
+                    audio: true
+                });
+
+                // Если пользователь выбрал вкладку без аудио
+                const audioTrack = systemStream.getAudioTracks()[0];
+                if (!audioTrack) {
+                    alert("Выбранный источник не содержит аудио. Убедитесь, что поставили галочку 'Share audio'");
+                    stopTracks();
+                    return;
+                }
+
+                // Создаем MediaStream только с аудио дорожкой для записи
+                const systemAudioStream = new MediaStream([audioTrack]);
+                const sysSource = audioContext.createMediaStreamSource(systemStream);
+                sysSource.connect(destination);
+
+                // Проверяем поддерживаемые MIME типы
+                const mimeType = 'audio/webm;codecs=opus';
+
+                // Создаем MediaRecorder для системного звука
+                systemRecorder = new MediaRecorder(systemAudioStream, {
+                    mimeType: mimeType
+                });
+
+                systemRecorder.ondataavailable = async (event) => {
+                    if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                        console.log(`System chunk size: ${event.data.size}`);
+                        // Префикс 0x01 для системного звука
+                        const arrayBuffer = await event.data.arrayBuffer();
+                        const prefixedData = new Uint8Array(arrayBuffer.byteLength + 1);
+                        prefixedData[0] = 0x01; // Маркер источника: 1 = системный звук
+                        prefixedData.set(new Uint8Array(arrayBuffer), 1);
+                        ws.send(prefixedData);
+                    }
+                };
+
+                systemRecorder.start(450);
+                console.log("System recorder started");
+            }
 
             btnStart.style.display = 'none';
             btnStop.style.display = 'inline-block';
@@ -113,7 +151,7 @@ async function startRecording() {
         };
 
         ws.onerror = (e) => {
-            console.error(e);
+            console.error("WebSocket error:", e);
             statusEl.textContent = "Ошибка WebSocket";
         };
 
@@ -125,8 +163,11 @@ async function startRecording() {
 }
 
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    if (micRecorder && micRecorder.state !== 'inactive') {
+        micRecorder.stop();
+    }
+    if (systemRecorder && systemRecorder.state !== 'inactive') {
+        systemRecorder.stop();
     }
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "stop" }));
@@ -147,6 +188,10 @@ let currentInterim = null;
 
 function handleServerMessage(data) {
     if (data.type === "transcript") {
+        // Добавляем метку источника, если есть
+        const speaker = data.speaker ? (data.speaker === 'me' ? '🗣 Я' : '👥 Собеседник') : '';
+        const speakerPrefix = speaker ? `<span class="speaker">${speaker}:</span> ` : '';
+
         if (data.is_final) {
             // Удаляем временный, добавляем финальный
             if (currentInterim) {
@@ -155,7 +200,7 @@ function handleServerMessage(data) {
             }
             const div = document.createElement('div');
             div.className = 'message';
-            div.innerHTML = `<b>${formatTime(data.timestamp)}:</b> ${data.text}`;
+            div.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${speakerPrefix}${data.text}`;
             transcriptBox.appendChild(div);
         } else {
             // Обновляем временный
@@ -164,7 +209,7 @@ function handleServerMessage(data) {
                 currentInterim.className = 'message interim';
                 transcriptBox.appendChild(currentInterim);
             }
-            currentInterim.innerHTML = `... ${data.text}`;
+            currentInterim.innerHTML = `... ${speakerPrefix}${data.text}`;
         }
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
     }
@@ -188,8 +233,20 @@ function handleServerMessage(data) {
     }
 }
 
-function formatTime(seconds) {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    return `${min}:${sec < 10 ? '0' + sec : sec}`;
+function formatTime(timestamp) {
+    // Если timestamp - это строка в формате HH:MM:SS, просто возвращаем ее
+    if (typeof timestamp === 'string' && timestamp.includes(':')) {
+        return timestamp;
+    }
+
+    // Если timestamp - это число (секунды), преобразуем в MM:SS
+    const seconds = Number(timestamp);
+    if (!isNaN(seconds)) {
+        const min = Math.floor(seconds / 60);
+        const sec = Math.floor(seconds % 60);
+        return `${min}:${sec < 10 ? '0' + sec : sec}`;
+    }
+
+    // Если не можем распарсить, возвращаем исходное значение
+    return timestamp;
 }
