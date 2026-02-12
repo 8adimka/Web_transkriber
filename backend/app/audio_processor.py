@@ -12,6 +12,7 @@ class FFmpegStreamer:
 
     def __init__(self):
         self.process = None
+        self._stopped = False
 
     async def start(self):
         """Запускает процесс FFmpeg, читающий из stdin (pipe:0)"""
@@ -44,7 +45,7 @@ class FFmpegStreamer:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,  # Игнорируем stderr для чистоты, если нужно - поменяем
         )
-        logger.info("FFmpeg streamer started")
+        # Минимальное логирование: убрали info о старте
 
     async def write(self, data: bytes):
         """Пишет сжатые данные в FFmpeg"""
@@ -67,6 +68,10 @@ class FFmpegStreamer:
         return b""
 
     async def stop(self):
+        if self._stopped:
+            return
+        self._stopped = True
+
         if self.process:
             try:
                 if self.process.stdin:
@@ -74,5 +79,10 @@ class FFmpegStreamer:
                 self.process.terminate()
                 await self.process.wait()
             except Exception:
-                pass
+                try:
+                    self.process.kill()
+                except:
+                    pass
+            finally:
+                self.process = None
         logger.info("FFmpeg streamer stopped")

@@ -58,7 +58,7 @@ class DialogueProcessor:
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
                 f"&model=nova-2&language={self.language.lower()}&punctuate=true&smart_format=true"
-                "&endpointing=2000&diarize=true&interim_results=true"
+                "&endpointing=5000&diarize=true&interim_results=true&speech_final=true"
             )
 
             async with ws_connect(
@@ -155,11 +155,31 @@ class DialogueProcessor:
             self.dialog_segments.append(new_item)
 
     async def stop(self):
+        if not self.is_running:
+            return
         self.is_running = False
+
+        # Отменяем все задачи
         for t in self.active_tasks:
-            t.cancel()
-        await self.ffmpeg_me.stop()
-        await self.ffmpeg_interlocutor.stop()
+            if not t.done():
+                t.cancel()
+
+        # Ждем завершения задач с таймаутом
+        if self.active_tasks:
+            try:
+                await asyncio.wait(self.active_tasks, timeout=2.0)
+            except asyncio.TimeoutError:
+                pass
+
+        # Останавливаем FFmpeg процессы
+        await asyncio.gather(
+            self.ffmpeg_me.stop(),
+            self.ffmpeg_interlocutor.stop(),
+            return_exceptions=True,
+        )
+
+        # Очищаем список задач
+        self.active_tasks.clear()
 
     def get_dialog_text(self) -> str:
         lines = []

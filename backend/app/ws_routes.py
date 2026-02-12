@@ -14,12 +14,20 @@ session_manager = SessionManager()
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     session = session_manager.create(websocket)
-    logger.info(f"WebSocket connected: {id(websocket)}")
+    # Минимальное логирование: убрали info о подключении
 
     try:
         while True:
             # Получаем сообщение
-            message = await websocket.receive()
+            try:
+                message = await websocket.receive()
+            except WebSocketDisconnect:
+                # Клиент отключился, выходим из цикла
+                break
+            except RuntimeError as e:
+                # Другие ошибки runtime, например, соединение уже закрыто
+                logger.debug(f"WebSocket receive error: {e}")
+                break
 
             if "text" in message:
                 try:
@@ -47,6 +55,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     elif msg_type == "stop":
                         await session_manager.stop_session(session)
+                        # После остановки сессии можно выйти из цикла, т.к. клиент ожидает закрытия соединения
+                        # Но оставляем соединение открытым для получения сообщения done
+                        continue
 
                 except json.JSONDecodeError:
                     logger.error("Invalid JSON received")
@@ -55,13 +66,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 await session_manager.handle_audio_chunk(session, message["bytes"])
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected: {id(websocket)}")
-        await session_manager.stop_session(session)
-        session_manager.remove(websocket)
+        # Минимальное логирование: убрали info об отключении
+        pass
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        try:
+    finally:
+        # Гарантируем остановку сессии и очистку ресурсов, если ещё не остановлена
+        if not session.stopped:
             await session_manager.stop_session(session)
-            session_manager.remove(websocket)
-        except:
-            pass
+        session_manager.remove(websocket)

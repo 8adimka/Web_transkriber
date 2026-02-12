@@ -75,16 +75,14 @@ class TranslationProcessor:
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
                 f"&model=nova-2&language={self.source_lang.lower()}&punctuate=true&smart_format=true"
-                "&endpointing=2000&interim_results=true"
+                "&endpointing=5000&interim_results=true&speech_final=true"
             )
 
             async with ws_connect(
                 dg_url, extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
             ) as ws:
                 self.dg_ws = ws
-                logger.info(
-                    f"Deepgram connected ({self.source_lang} -> {self.target_lang})"
-                )
+                # Минимальное логирование: убрали info о подключении
 
                 # Параллельно шлем аудио и читаем ответы
                 await asyncio.gather(self._send_data(ws, queue), self._recv_data(ws))
@@ -139,7 +137,7 @@ class TranslationProcessor:
                     # Если interim - просто шлем на фронт для обновления "на лету"
 
                     if is_final:
-                        logger.info(f"Final: {transcript} -> {translated_text}")
+                        # Минимальное логирование: убрали info о финальных фразах
                         # Колбэк только для финала! Чтобы не было спама в файле
                         self.translation_callback(f"{transcript} -> {translated_text}")
 
@@ -162,18 +160,46 @@ class TranslationProcessor:
         await self.ffmpeg_system.write(webm_data)
 
     async def stop(self):
+        if not self.is_running:
+            return
         self.is_running = False
-        for t in self.active_tasks:
-            t.cancel()
 
+        # Очищаем очередь, чтобы задачи могли завершиться
+        while not self.pcm_queue.empty():
+            try:
+                self.pcm_queue.get_nowait()
+                self.pcm_queue.task_done()
+            except:
+                break
+
+        # Отменяем все задачи
+        for t in self.active_tasks:
+            if not t.done():
+                t.cancel()
+
+        # Ждем завершения задач с таймаутом
+        if self.active_tasks:
+            try:
+                await asyncio.wait(self.active_tasks, timeout=2.0)
+            except asyncio.TimeoutError:
+                pass
+
+        # Закрываем WebSocket соединение с Deepgram
         try:
             if self.dg_ws:
                 await self.dg_ws.close()
         except:
             pass
 
-        await self.ffmpeg_system.stop()
-        await translation_service.stop()
+        # Останавливаем FFmpeg и сервис перевода
+        await asyncio.gather(
+            self.ffmpeg_system.stop(),
+            translation_service.stop(),
+            return_exceptions=True,
+        )
+
+        # Очищаем список задач
+        self.active_tasks.clear()
 
     def get_translation_history(self) -> List[dict]:
         return self.translation_history.copy()

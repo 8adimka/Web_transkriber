@@ -58,17 +58,12 @@ btnStartTranslation.onclick = startTranslation;
 btnStop.onclick = stopRecording;
 
 useMicCheckbox.addEventListener('change', function () {
-    if (currentMode === 'translation') {
-        this.checked = false;
-        alert('В режиме перевода микрофон отключен.');
-    }
+    // Разрешаем микрофон в любом режиме
+    // Никаких уведомлений
 });
 
 useSystemCheckbox.addEventListener('change', function () {
-    if (currentMode === 'translation' && !this.checked) {
-        this.checked = true;
-        alert('В режиме перевода требуется звук системы.');
-    }
+    // Никаких уведомлений
 });
 
 // --- Логика Picture-in-Picture ---
@@ -82,7 +77,7 @@ async function openPiP() {
     try {
         pipWindow = await documentPictureInPicture.requestWindow({
             width: 800,
-            height: 300, // Увеличил высоту для комфортного чтения истории
+            height: 250, // Уменьшил высоту для компактности
         });
 
         // Сбрасываем стили body у PiP окна
@@ -161,11 +156,16 @@ async function startRecording() {
 }
 
 async function startTranslation() {
+    const useMic = document.getElementById('useMic').checked;
+    const useSystem = document.getElementById('useSystem').checked;
+
+    if (!useMic && !useSystem) {
+        alert("Выберите хотя бы один источник звука");
+        return;
+    }
+
     setRunningUi(true);
     currentMode = 'translation';
-
-    useMicCheckbox.checked = false;
-    useSystemCheckbox.checked = true;
 
     try {
         await openPiP();
@@ -176,8 +176,11 @@ async function startTranslation() {
 
         setupWebSocket(true);
 
-        const success = await setupSystemStream(destination);
-        if (!success) return;
+        if (useMic) await setupMicStream(destination);
+        if (useSystem) {
+            const success = await setupSystemStream(destination);
+            if (!success) return;
+        }
 
     } catch (err) {
         console.error("Error starting translation:", err);
@@ -187,22 +190,60 @@ async function startTranslation() {
 }
 
 function stopRecording() {
-    if (micRecorder && micRecorder.state !== 'inactive') micRecorder.stop();
-    if (systemRecorder && systemRecorder.state !== 'inactive') systemRecorder.stop();
+    // Останавливаем медиа рекордеры
+    if (micRecorder && micRecorder.state !== 'inactive') {
+        try { micRecorder.stop(); } catch { }
+    }
+    if (systemRecorder && systemRecorder.state !== 'inactive') {
+        try { systemRecorder.stop(); } catch { }
+    }
 
+    // Отправляем команду остановки на сервер
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "stop" }));
         statusEl.textContent = "Завершение...";
+        // Не закрываем WebSocket сразу, ждем сообщение done от сервера
+    } else {
+        // Если WebSocket не открыт, просто очищаем ресурсы
+        finalCleanup();
+    }
+}
+
+function finalCleanup() {
+    // Закрываем WebSocket
+    if (ws) {
+        try { ws.close(); } catch { }
+        ws = null;
     }
 
+    // Останавливаем медиа потоки
     stopTracks();
+
+    // Сбрасываем состояние UI
     setRunningUi(false);
 
+    // Очищаем interim элемент
+    if (currentInterim) {
+        currentInterim.remove();
+        currentInterim = null;
+    }
+
+    // Закрываем PiP окно
     if (pipWindow) {
         pipWindow.close();
         pipWindow = null;
     }
     pipContainer.style.display = 'none';
+
+    // Сбрасываем рекордеры
+    micRecorder = null;
+    systemRecorder = null;
+    audioContext = null;
+    micStream = null;
+    systemStream = null;
+
+    // Сбрасываем режим
+    currentMode = 'transcription';
 }
 
 function stopTracks() {
@@ -327,7 +368,7 @@ function handleServerMessage(data) {
             downloadLink.href = data.file_url;
             downloadSection.style.display = 'block';
         }
-        stopRecording();
+        finalCleanup();
     } else if (data.type === "error") {
         alert("Server Error: " + data.message);
     }
@@ -356,28 +397,45 @@ function renderTranscript(data) {
 
 function renderTranslation(data) {
     // Рендер перевода в PiP (с историей и отступами)
-
     if (data.is_final) {
-        // 1. Создаем элемент финальной фразы
+        // 1. Создаем элемент финальной фразы для PiP
         const div = document.createElement('div');
         div.className = 'pip-final-item';
         div.textContent = data.translated;
 
-        // Добавляем в список истории
+        // Добавляем в список истории PiP
         pipFinalPhrases.appendChild(div);
 
         // 2. Очищаем поле interim (фраза завершена)
         pipInterimPhrase.textContent = '';
 
-        // 3. Лимит истории (удаляем самые старые сверху)
-        // Держим ~5-6 последних фраз, чтобы не переполнять окно
-        while (pipFinalPhrases.children.length > 6) {
+        // 3. Лимит истории (удаляем самые старые сверху, оставляем 5 строк)
+        while (pipFinalPhrases.children.length > 5) {
             pipFinalPhrases.removeChild(pipFinalPhrases.firstChild);
         }
 
+        // 4. Автоматический скролл к последнему элементу истории
+        pipFinalPhrases.scrollTop = pipFinalPhrases.scrollHeight;
+
+        // 5. Отображаем перевод в основном окне транскрипции
+        const transcriptDiv = document.createElement('div');
+        transcriptDiv.className = 'message translation';
+        transcriptDiv.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${data.translated}`;
+        transcriptBox.appendChild(transcriptDiv);
+        transcriptBox.scrollTop = transcriptBox.scrollHeight;
+
     } else {
-        // Промежуточная фраза - обновляем нижнюю строку
+        // Промежуточная фраза - обновляем нижнюю строку PiP
         pipInterimPhrase.textContent = data.translated;
+
+        // Также обновляем interim в основном окне (если есть)
+        if (!currentInterim) {
+            currentInterim = document.createElement('div');
+            currentInterim.className = 'message interim translation';
+            transcriptBox.appendChild(currentInterim);
+        }
+        currentInterim.innerHTML = `... ${data.translated}`;
+        transcriptBox.scrollTop = transcriptBox.scrollHeight;
     }
 }
 

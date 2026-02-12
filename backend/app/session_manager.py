@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 import aiofiles
@@ -22,6 +23,7 @@ class Session:
         self.processor_task = None
         self.active = True
         self.mode = "transcription"
+        self.stopped = False
 
     def append_transcript(self, text, speaker=""):
         self.transcript_log.append(text)
@@ -37,15 +39,25 @@ class Session:
             async with aiofiles.open(path, "w", encoding="utf-8") as f:
                 if self.mode == "transcription":
                     await f.write("ТРАНСКРИПЦИЯ\n\n")
-                    for t, s in zip(self.transcript_log, self.speaker_log):
-                        sp = "Я" if s == "me" else "Собеседник"
-                        await f.write(f"{sp}: {t}\n\n")
+                    # Если есть процессор DialogueProcessor, используем его метод для получения текста с временем
+                    if isinstance(self.processor, DialogueProcessor):
+                        dialog_text = self.processor.get_dialog_text()
+                        await f.write(dialog_text)
+                    else:
+                        # Старый способ (без времени)
+                        for t, s in zip(self.transcript_log, self.speaker_log):
+                            sp = "Я" if s == "me" else "Собеседник"
+                            await f.write(f"{sp}: {t}\n\n")
+                    logger = logging.getLogger("Session")
+                    logger.info(f"Файл транскрипции сохранен: {path}")
                 else:
-                    await f.write("ПЕРЕВОД\n\n")
-                    for t in self.translation_log:
-                        await f.write(f"{t}\n")
+                    # Режим перевода - файл не сохраняем (по требованию пользователя)
+                    # Возвращаем None, чтобы фронтенд не показывал ссылку на скачивание
+                    return None
             return path
-        except:
+        except Exception as e:
+            logger = logging.getLogger("Session")
+            logger.error(f"Ошибка сохранения файла: {e}")
             return None
 
 
@@ -81,7 +93,14 @@ class SessionManager:
         )
 
     async def stop_session(self, session: Session):
+        if session.stopped:
+            return
+        session.stopped = True
         session.active = False
+
+        logger = logging.getLogger("SessionManager")
+        logger.info(f"Остановка сессии {session.filename}")
+
         if session.processor:
             await session.processor.stop()
         if session.processor_task:
@@ -91,11 +110,15 @@ class SessionManager:
         msg = {"type": "done", "message": "Готово"}
         if path:
             msg["file_url"] = f"/download/{session.filename}"
+            logger.info(f"Файл доступен для скачивания: {msg['file_url']}")
+        else:
+            logger.info("Файл не сохранен (режим перевода или ошибка)")
 
         try:
             await session.websocket.send_json(msg)
-        except:
-            pass
+            logger.info("Сообщение 'done' отправлено клиенту")
+        except Exception as e:
+            logger.error(f"Не удалось отправить сообщение 'done': {e}")
 
     async def handle_audio_chunk(self, session: Session, data: bytes):
         if len(data) < 2:
@@ -106,7 +129,8 @@ class SessionManager:
         if session.processor and session.active:
             if session.mode == "transcription":
                 await session.processor.process_chunk(source, webm)
-            elif session.mode == "translation" and source == 1:
-                # В режиме перевода только системный звук
+            elif session.mode == "translation":
+                # В режиме перевода принимаем как микрофон (0), так и системный звук (1)
+                # TranslationProcessor ожидает только один канал, поэтому передаем webm независимо от source
                 if isinstance(session.processor, TranslationProcessor):
                     await session.processor.process_chunk(webm)
