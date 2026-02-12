@@ -1,14 +1,18 @@
 import logging
+import sys
 from datetime import datetime
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
-logger = logging.getLogger("WebTranscriber")
+
+logger = logging.getLogger("App")
 
 
 def get_timestamp_filename():
-    """Генерирует имя файла на основе текущего времени."""
-    return f"dialog_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+    """Генерирует имя файла на основе текущего времени"""
+    now = datetime.now()
+    return f"dialog_{now.strftime('%Y-%m-%d_%H-%M-%S')}.txt"

@@ -6,109 +6,73 @@ logger = logging.getLogger("AudioProcessor")
 
 class FFmpegStreamer:
     """
-    Запускает FFmpeg в подпроцессе.
-    Принимает Opus/WebM чанки в stdin.
-    Выдает raw PCM (s16le, 16000Hz, mono) в stdout.
+    Запускает FFmpeg и читает RAW PCM данные.
+    Максимально упрощенная и надежная версия.
     """
 
     def __init__(self):
         self.process = None
-        self.stderr_task = None
 
     async def start(self):
+        """Запускает процесс FFmpeg, читающий из stdin (pipe:0)"""
         command = [
             "ffmpeg",
             "-i",
-            "pipe:0",  # Чтение из stdin
+            "pipe:0",  # Вход: WebM/Opus из WebSocket
             "-vn",  # Без видео
             "-map",
-            "0:a",  # Только аудио дорожка
+            "0:a",  # Только аудио
             "-f",
-            "s16le",  # Формат вывода raw PCM
+            "s16le",  # Формат: Signed 16-bit Little Endian
             "-ac",
-            "1",  # Моно
+            "1",  # Каналы: 1 (Mono)
             "-ar",
-            "16000",  # 16kHz
+            "16000",  # Частота: 16kHz (стандарт для STT)
             "-acodec",
-            "pcm_s16le",  # Кодек
+            "pcm_s16le",
             "-hide_banner",
             "-loglevel",
-            "error",  # Меньше шума в логах
+            "error",  # Только ошибки
             "-flags",
-            "low_delay",
-            "-probesize",
-            "32",
-            "pipe:1",  # Вывод в stdout
+            "low_delay",  # Минимальная задержка
+            "pipe:1",  # Выход: stdout
         ]
 
         self.process = await asyncio.create_subprocess_exec(
             *command,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,  # Игнорируем stderr для чистоты, если нужно - поменяем
         )
-        logger.info("FFmpeg subprocess started")
-
-        # Запускаем задачу чтения stderr для отладки
-        self.stderr_task = asyncio.create_task(self._read_stderr())
-
-    async def _read_stderr(self):
-        """Читает stderr FFmpeg для отладки"""
-        if self.process and self.process.stderr:
-            try:
-                while True:
-                    line = await self.process.stderr.readline()
-                    if not line:
-                        break
-                    line_str = line.decode("utf-8", errors="ignore").strip()
-                    if line_str:
-                        logger.debug(f"FFmpeg stderr: {line_str}")
-            except Exception as e:
-                logger.error(f"Error reading FFmpeg stderr: {e}")
+        logger.info("FFmpeg streamer started")
 
     async def write(self, data: bytes):
-        """Пишет сжатые данные (Opus/WebM) в stdin FFmpeg"""
+        """Пишет сжатые данные в FFmpeg"""
         if self.process and self.process.stdin:
             try:
                 self.process.stdin.write(data)
                 await self.process.stdin.drain()
-            except BrokenPipeError:
-                logger.error("FFmpeg stdin pipe broken")
-            except Exception as e:
-                logger.error(f"Error writing to FFmpeg: {e}")
+            except Exception:
+                # Игнорируем ошибки записи, если процесс умер (перезапустится)
+                pass
 
     async def read(self, chunk_size: int) -> bytes:
-        """Читает PCM данные из stdout FFmpeg"""
+        """Читает разжатые PCM данные"""
         if self.process and self.process.stdout:
             try:
-                # Читаем до chunk_size байт, но не блокируемся, если данных меньше
-                data = await self.process.stdout.read(chunk_size)
-                return data
-            except Exception as e:
-                logger.error(f"Error reading from FFmpeg: {e}")
+                # readexactly не используем, чтобы не блокироваться намертво
+                return await self.process.stdout.read(chunk_size)
+            except Exception:
                 return b""
         return b""
 
-    async def close_stdin(self):
-        """Закрывает ввод, сигнализируя FFmpeg о конце потока"""
-        if self.process and self.process.stdin:
-            self.process.stdin.close()
-            await self.process.stdin.wait_closed()
-
     async def stop(self):
-        """Принудительная остановка"""
-        if self.stderr_task:
-            self.stderr_task.cancel()
-            try:
-                await self.stderr_task
-            except asyncio.CancelledError:
-                pass
-
         if self.process:
-            if self.process.returncode is None:
-                try:
-                    self.process.terminate()
-                    await self.process.wait()
-                except ProcessLookupError:
-                    pass
-            logger.info("FFmpeg subprocess stopped")
+            try:
+                if self.process.stdin:
+                    self.process.stdin.close()
+                self.process.terminate()
+                await self.process.wait()
+            except Exception:
+                pass
+        logger.info("FFmpeg streamer stopped")

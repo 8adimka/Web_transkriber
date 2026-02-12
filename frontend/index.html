@@ -63,12 +63,13 @@
     </div>
 
     <!-- Структура для PiP окна -->
-    <div id="pipWrapper">
-        <div id="pipContainer" class="pip-container" style="display: none;">
-            <!-- Единый контент с автоскроллом -->
-            <div id="pipContent" class="pip-content">
-                <div class="pip-placeholder">Слушаю...</div>
-            </div>
+    <div id="pipWrapper" style="display: none;">
+        <div id="pipContainer" class="pip-container">
+            <!-- История финальных фраз -->
+            <div id="pipFinalPhrases" class="pip-final-list"></div>
+
+            <!-- Текущая (interim) фраза -->
+            <div id="pipInterimPhrase" class="pip-interim"></div>
         </div>
     </div>
 

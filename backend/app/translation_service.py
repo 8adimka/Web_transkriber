@@ -11,109 +11,85 @@ DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
 
 
 class TranslationService:
-    """Сервис для перевода текста через DeepL API"""
+    """
+    Сервис перевода через DeepL.
+    Использует кэширование для ускорения Real-time перевода.
+    """
 
     def __init__(self):
         self.api_key = DEEPL_API_KEY
         self.client: Optional[httpx.AsyncClient] = None
-        self.translation_cache: Dict[str, str] = {}
-        self.request_timeout = 5.0  # секунд
+        # Кэш переводов: "Original text" -> "Translated text"
+        # Это критически важно для interim результатов, чтобы не дублировать запросы
+        self.cache: Dict[str, str] = {}
 
     async def start(self):
-        """Инициализирует HTTP клиент"""
-        if not self.api_key:
-            logger.warning("DeepL API key not set. Translation will be disabled.")
-            return
-
         self.client = httpx.AsyncClient(
-            timeout=self.request_timeout,
+            timeout=5.0,
             headers={
                 "Authorization": f"DeepL-Auth-Key {self.api_key}",
-                "User-Agent": "WebTranscriber/1.0",
-                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "WebTranscriber/2.0",
             },
         )
-        logger.info("TranslationService started")
+        if self.api_key:
+            logger.info("TranslationService: DeepL ready")
+        else:
+            logger.warning(
+                "TranslationService: DeepL key missing! Translations will fail."
+            )
 
     async def stop(self):
-        """Останавливает HTTP клиент"""
         if self.client:
             await self.client.aclose()
-            self.client = None
-            logger.info("TranslationService stopped")
 
-    async def translate(
-        self,
-        text: str,
-        target_lang: str = "RU",
-        source_lang: Optional[str] = None,
-    ) -> str:
+    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
         """
-        Переводит текст через DeepL API.
-
-        Args:
-            text: Текст для перевода
-            target_lang: Целевой язык (по умолчанию "RU")
-            source_lang: Исходный язык (опционально, автоопределение если None)
-
-        Returns:
-            Переведенный текст или оригинал в случае ошибки
+        Переводит текст. Если текст уже был переведен ранее (например, в interim),
+        возвращает результат из кэша мгновенно.
         """
         if not text or not text.strip():
             return ""
 
-        # Проверяем кэш
-        cache_key = f"{source_lang or 'auto'}:{target_lang}:{text}"
-        if cache_key in self.translation_cache:
-            logger.debug(f"Cache hit for: {text[:50]}...")
-            return self.translation_cache[cache_key]
-
-        # Если API ключ не установлен, возвращаем оригинал
+        # Если ключа нет, возвращаем оригинал
         if not self.api_key or not self.client:
-            logger.warning("DeepL API not available, returning original text")
             return text
 
-        # Подготавливаем данные для запроса
-        data = {
-            "text": text,
-            "target_lang": target_lang,
-        }
-        if source_lang:
-            data["source_lang"] = source_lang
+        # Нормализация ключа кэша
+        text_key = text.strip()
+        cache_key = f"{source_lang}:{target_lang}:{text_key}"
+
+        # 1. Проверка кэша (Оптимизация скорости из RealTimeSubtitles)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
 
         try:
-            logger.debug(f"Translating: {text[:50]}...")
+            # 2. Запрос к DeepL
+            data = {
+                "text": text_key,
+                "target_lang": target_lang.upper(),
+                "source_lang": source_lang.upper()
+                if source_lang and source_lang != "auto"
+                else None,
+            }
+            # Удаляем пустые ключи
+            data = {k: v for k, v in data.items() if v is not None}
+
             response = await self.client.post(DEEPL_API_URL, data=data)
             response.raise_for_status()
 
-            result = response.json()
-            if "translations" in result and len(result["translations"]) > 0:
-                translated = result["translations"][0]["text"]
+            result_json = response.json()
+            if "translations" in result_json:
+                translated = result_json["translations"][0]["text"]
                 # Сохраняем в кэш
-                self.translation_cache[cache_key] = translated
-                logger.debug(f"Translated: {text[:50]}... -> {translated[:50]}...")
+                self.cache[cache_key] = translated
                 return translated
-            else:
-                logger.error(f"Unexpected DeepL response: {result}")
-                return text
 
-        except httpx.TimeoutException:
-            logger.warning(f"DeepL API timeout for: {text[:50]}...")
             return text
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"DeepL API HTTP error: {e.response.status_code} - {e.response.text}"
-            )
-            return text
+
         except Exception as e:
             logger.error(f"DeepL API error: {e}")
             return text
 
-    def clear_cache(self):
-        """Очищает кэш переводов"""
-        self.translation_cache.clear()
-        logger.debug("Translation cache cleared")
 
-
-# Глобальный экземпляр сервиса
+# Глобальный экземпляр
 translation_service = TranslationService()

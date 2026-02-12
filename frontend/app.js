@@ -18,9 +18,10 @@ const targetLang = document.getElementById('targetLang');
 const useMicCheckbox = document.getElementById('useMic');
 const useSystemCheckbox = document.getElementById('useSystem');
 
-// Элементы PiP
+// Элементы PiP (будут привязаны при открытии окна)
 const pipContainer = document.getElementById('pipContainer');
-const pipContent = document.getElementById('pipContent');
+const pipFinalPhrases = document.getElementById('pipFinalPhrases');
+const pipInterimPhrase = document.getElementById('pipInterimPhrase');
 let pipWindow = null;
 
 // Режим работы
@@ -80,15 +81,15 @@ async function openPiP() {
 
     try {
         pipWindow = await documentPictureInPicture.requestWindow({
-            width: 600,
-            height: 150, // Небольшая высота для 1-2 строк текста
+            width: 800,
+            height: 300, // Увеличил высоту для комфортного чтения истории
         });
 
-        // ВАЖНО: Сбрасываем стили body у PiP окна, чтобы убрать padding основного окна
+        // Сбрасываем стили body у PiP окна
         pipWindow.document.body.style.margin = "0";
         pipWindow.document.body.style.padding = "0";
-        pipWindow.document.body.style.display = "block"; // Отключаем flex основного окна
         pipWindow.document.body.style.background = "black";
+        pipWindow.document.body.style.overflow = "hidden";
 
         // Копируем стили
         [...document.styleSheets].forEach((styleSheet) => {
@@ -107,20 +108,23 @@ async function openPiP() {
             }
         });
 
+        // Перемещаем контейнер в PiP
         pipWindow.document.body.appendChild(pipContainer);
         pipContainer.style.display = 'flex';
 
+        // Обработчик закрытия
         pipWindow.addEventListener("pagehide", (event) => {
-            document.getElementById('pipWrapper').appendChild(pipContainer);
+            const wrapper = document.getElementById('pipWrapper');
+            if (wrapper) wrapper.appendChild(pipContainer);
             pipContainer.style.display = 'none';
             pipWindow = null;
+            stopRecording(); // Останавливаем запись при закрытии окна
         });
 
     } catch (err) {
         console.error("Не удалось открыть PiP окно:", err);
     }
 }
-
 
 // --- Основные функции ---
 
@@ -234,7 +238,8 @@ function setupWebSocket(isTranslation) {
         downloadSection.style.display = 'none';
 
         // Очищаем PiP при старте
-        pipContent.innerHTML = '<div class="pip-single-text" style="color: #666;">Слушаю...</div>';
+        pipFinalPhrases.innerHTML = '';
+        pipInterimPhrase.textContent = '';
     };
 
     ws.onmessage = (event) => {
@@ -350,9 +355,30 @@ function renderTranscript(data) {
 }
 
 function renderTranslation(data) {
-    // Просто заменяем всё содержимое на новую фразу
-    // Одинаковый стиль для final и interim, чтобы не дергалось
-    pipContent.innerHTML = `<div class="pip-single-text">${data.translated}</div>`;
+    // Рендер перевода в PiP (с историей и отступами)
+
+    if (data.is_final) {
+        // 1. Создаем элемент финальной фразы
+        const div = document.createElement('div');
+        div.className = 'pip-final-item';
+        div.textContent = data.translated;
+
+        // Добавляем в список истории
+        pipFinalPhrases.appendChild(div);
+
+        // 2. Очищаем поле interim (фраза завершена)
+        pipInterimPhrase.textContent = '';
+
+        // 3. Лимит истории (удаляем самые старые сверху)
+        // Держим ~5-6 последних фраз, чтобы не переполнять окно
+        while (pipFinalPhrases.children.length > 6) {
+            pipFinalPhrases.removeChild(pipFinalPhrases.firstChild);
+        }
+
+    } else {
+        // Промежуточная фраза - обновляем нижнюю строку
+        pipInterimPhrase.textContent = data.translated;
+    }
 }
 
 function formatTime(ts) {
