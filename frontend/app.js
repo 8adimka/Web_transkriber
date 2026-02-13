@@ -410,45 +410,53 @@ function renderTranscript(data) {
 }
 
 function renderTranslation(data) {
-    // Рендер перевода в PiP (с историей и отступами)
+    const translated = data.translated.trim();
+    const placeholder = transcriptBox.querySelector('.placeholder');
+    if (placeholder) placeholder.remove();
+
     if (data.is_final) {
-        // 1. Создаем элемент финальной фразы для PiP
-        const div = document.createElement('div');
-        div.className = 'pip-final-item';
-        div.textContent = data.translated;
+        // === Финальная фраза: разбиваем на предложения ===
+        const sentences = translated
+            .split(/(?<=[.!?])\s+/)          // разделяем по . ! ? с сохранением знака
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
 
-        // Добавляем в список истории PiP
-        pipFinalPhrases.appendChild(div);
+        sentences.forEach(sentence => {
+            const div = document.createElement('div');
+            div.className = 'pip-final-item';
+            div.textContent = sentence;
+            pipFinalPhrases.appendChild(div);   // благодаря column-reverse будет внизу
+        });
 
-        // 2. Очищаем поле interim (фраза завершена)
+        // Очищаем interim
         pipInterimPhrase.textContent = '';
 
-        // 3. Лимит истории (удаляем самые старые сверху, оставляем 5 строк)
-        while (pipFinalPhrases.children.length > 5) {
+        // Лимит истории (оставляем последние 6 строк)
+        while (pipFinalPhrases.children.length > 6) {
             pipFinalPhrases.removeChild(pipFinalPhrases.firstChild);
         }
 
-        // 4. Автоматический скролл к последнему элементу истории
+        // Скролл к самому низу (к новой фразе)
         pipFinalPhrases.scrollTop = pipFinalPhrases.scrollHeight;
 
-        // 5. Отображаем перевод в основном окне транскрипции
+        // Также дублируем в основное окно (как было)
         const transcriptDiv = document.createElement('div');
         transcriptDiv.className = 'message translation';
-        transcriptDiv.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${data.translated}`;
+        transcriptDiv.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${translated}`;
         transcriptBox.appendChild(transcriptDiv);
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
 
     } else {
-        // Промежуточная фраза - обновляем нижнюю строку PiP
-        pipInterimPhrase.textContent = data.translated;
+        // === Interim: просто обновляем нижнюю строку ===
+        pipInterimPhrase.textContent = translated;
 
-        // Также обновляем interim в основном окне (если есть)
+        // Также обновляем interim в основном окне
         if (!currentInterim) {
             currentInterim = document.createElement('div');
             currentInterim.className = 'message interim translation';
             transcriptBox.appendChild(currentInterim);
         }
-        currentInterim.innerHTML = `... ${data.translated}`;
+        currentInterim.innerHTML = `... ${translated}`;
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
     }
 }
