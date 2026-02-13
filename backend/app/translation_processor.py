@@ -75,7 +75,7 @@ class TranslationProcessor:
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
                 f"&model=nova-2&language={self.source_lang.lower()}&punctuate=true&smart_format=true"
-                "&endpointing=5000&interim_results=true&speech_final=true"
+                "&endpointing=2500&interim_results=true&speech_final=true"
             )
 
             async with ws_connect(

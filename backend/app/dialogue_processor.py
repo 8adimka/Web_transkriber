@@ -58,7 +58,7 @@ class DialogueProcessor:
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
                 f"&model=nova-2&language={self.language.lower()}&punctuate=true&smart_format=true"
-                "&endpointing=5000&diarize=true&interim_results=true&speech_final=true"
+                "&endpointing=2500&diarize=true&interim_results=true&speech_final=true"
             )
 
             async with ws_connect(

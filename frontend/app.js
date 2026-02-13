@@ -289,7 +289,7 @@ function setupWebSocket(isTranslation) {
     };
 
     ws.onclose = () => {
-        if (statusEl.textContent !== "Готово. Файл сохранен.") {
+        if (statusEl.textContent !== "Готово") {
             statusEl.textContent = "Соединение закрыто";
         }
         stopRecording();
@@ -363,7 +363,7 @@ function handleServerMessage(data) {
     } else if (data.type === "translation") {
         renderTranslation(data);
     } else if (data.type === "done") {
-        statusEl.textContent = "Готово. Файл сохранен.";
+        statusEl.textContent = "Готово";
         if (data.file_url) {
             downloadLink.href = data.file_url;
             downloadSection.style.display = 'block';
