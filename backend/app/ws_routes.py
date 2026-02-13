@@ -36,8 +36,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     if msg_type == "start":
                         language = data.get("language", "RU")
-                        await session_manager.start_transcription_worker(
-                            session, language
+                        await session_manager.start_worker(
+                            session, mode="transcription", language=language
                         )
                         await websocket.send_json(
                             {"type": "status", "message": "Transcription started"}
@@ -46,8 +46,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     elif msg_type == "start_translation":
                         source = data.get("source_lang", "EN")
                         target = data.get("target_lang", "RU")
-                        await session_manager.start_translation_worker(
-                            session, source, target
+                        await session_manager.start_worker(
+                            session,
+                            mode="translation",
+                            source_lang=source,
+                            target_lang=target,
                         )
                         await websocket.send_json(
                             {"type": "status", "message": "Translation started"}

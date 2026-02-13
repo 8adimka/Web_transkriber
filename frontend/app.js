@@ -156,14 +156,28 @@ async function startRecording() {
 }
 
 async function startTranslation() {
-    const useMic = document.getElementById('useMic').checked;
-    const useSystem = document.getElementById('useSystem').checked;
+    // === 1. Получаем ссылки на чекбоксы (не просто значения!) ===
+    const micCheckbox = document.getElementById('useMic');
+    const systemCheckbox = document.getElementById('useSystem');
+
+    // === 2. Автоматическое отключение микрофона, если оба включены ===
+    if (micCheckbox.checked && systemCheckbox.checked) {
+        micCheckbox.checked = false;                                 // снимаем галочку
+        statusEl.textContent = 'Микрофон автоматически отключён (используется только системный звук)';
+        // можно добавить небольшой таймаут, чтобы пользователь увидел сообщение
+        await new Promise(resolve => setTimeout(resolve, 1200));
+    }
+
+    // === 3. Проверка, что хоть что-то выбрано ===
+    const useMic = micCheckbox.checked;
+    const useSystem = systemCheckbox.checked;
 
     if (!useMic && !useSystem) {
         alert("Выберите хотя бы один источник звука");
         return;
     }
 
+    // === 4. Запускаем перевод ===
     setRunningUi(true);
     currentMode = 'translation';
 
