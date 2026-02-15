@@ -411,13 +411,15 @@ function renderTranscript(data) {
 
 function renderTranslation(data) {
     const translated = data.translated.trim();
+
+    // Удаляем placeholder при первом сообщении
     const placeholder = transcriptBox.querySelector('.placeholder');
     if (placeholder) placeholder.remove();
 
     if (data.is_final) {
-        // === Финальная фраза: разбиваем на предложения ===
+        // Разбиваем на предложения
         const sentences = translated
-            .split(/(?<=[.!?])\s+/)          // разделяем по . ! ? с сохранением знака
+            .split(/(?<=[.!?])\s+/)
             .map(s => s.trim())
             .filter(s => s.length > 0);
 
@@ -425,21 +427,20 @@ function renderTranslation(data) {
             const div = document.createElement('div');
             div.className = 'pip-final-item';
             div.textContent = sentence;
-            pipFinalPhrases.appendChild(div);   // благодаря column-reverse будет внизу
+            pipFinalPhrases.appendChild(div);   // ← добавляем в конец (вниз)
         });
 
-        // Очищаем interim
         pipInterimPhrase.textContent = '';
 
-        // Лимит истории (оставляем последние 6 строк)
+        // Лимит — оставляем последние 6 строк (удаляем самые старые сверху)
         while (pipFinalPhrases.children.length > 6) {
             pipFinalPhrases.removeChild(pipFinalPhrases.firstChild);
         }
 
-        // Скролл к самому низу (к новой фразе)
+        // Скролл строго вниз к новой фразе
         pipFinalPhrases.scrollTop = pipFinalPhrases.scrollHeight;
 
-        // Также дублируем в основное окно (как было)
+        // Дублируем в основное окно
         const transcriptDiv = document.createElement('div');
         transcriptDiv.className = 'message translation';
         transcriptDiv.innerHTML = `<b>${formatTime(data.timestamp)}</b> ${translated}`;
@@ -447,10 +448,9 @@ function renderTranslation(data) {
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
 
     } else {
-        // === Interim: просто обновляем нижнюю строку ===
+        // Interim — просто обновляем нижнюю строку
         pipInterimPhrase.textContent = translated;
 
-        // Также обновляем interim в основном окне
         if (!currentInterim) {
             currentInterim = document.createElement('div');
             currentInterim.className = 'message interim translation';

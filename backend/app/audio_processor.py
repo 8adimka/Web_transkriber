@@ -130,7 +130,7 @@ class UniversalProcessor:
         self.dialog_segments: List[dict] = []
         self.last_speaker: Optional[str] = None
         self.last_segment_end_time: Optional[datetime] = None
-        self.merge_threshold_seconds = 2.0
+        self.merge_threshold_seconds = 6.0
 
         # Для translation (accumulation для контекста)
         self.current_phrase: str = ""

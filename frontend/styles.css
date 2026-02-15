@@ -175,7 +175,8 @@ select {
 /* Список финальных фраз (история) */
 .pip-final-list {
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: column;
+    justify-content: flex-end;
     gap: 6px;
     width: 100%;
     flex: 1;
@@ -183,6 +184,7 @@ select {
     max-height: calc(100% - 48px);
     margin-bottom: 8px;
     padding-bottom: 4px;
+    scroll-behavior: smooth;
 }
 
 .pip-final-item {
