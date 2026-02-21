@@ -3,6 +3,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from .dependencies import verify_websocket_token
 from .session_manager import SessionManager
 
 router = APIRouter()
@@ -12,8 +13,23 @@ session_manager = SessionManager()
 
 @router.websocket("/ws/stream")
 async def websocket_endpoint(websocket: WebSocket):
+    # Верифицируем токен перед подключением
+    try:
+        payload = await verify_websocket_token(websocket)
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        if not user_id:
+            logger.warning("Token missing 'sub' claim")
+            await websocket.close(code=1008)
+            return
+        logger.debug(f"WebSocket connection authorized for user {user_id} ({email})")
+    except Exception as e:
+        logger.warning(f"WebSocket authentication failed: {e}")
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
-    session = session_manager.create(websocket)
+    session = session_manager.create(websocket, user_id=user_id)
     # Минимальное логирование: убрали info о подключении
 
     try:

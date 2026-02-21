@@ -18,6 +18,13 @@ const targetLang = document.getElementById('targetLang');
 const useMicCheckbox = document.getElementById('useMic');
 const useSystemCheckbox = document.getElementById('useSystem');
 
+// Элементы аутентификации
+const authSection = document.getElementById('authSection');
+const userInfo = document.getElementById('userInfo');
+const userName = document.getElementById('userName');
+const logoutBtn = document.getElementById('logoutBtn');
+const loginPrompt = document.getElementById('loginPrompt');
+
 // Элементы PiP (будут привязаны при открытии окна)
 const pipContainer = document.getElementById('pipContainer');
 const pipFinalPhrases = document.getElementById('pipFinalPhrases');
@@ -28,6 +35,53 @@ let pipWindow = null;
 let currentMode = 'transcription';
 let currentInterim = null;
 
+// Инициализация аутентификации
+function initAuth() {
+    const token = localStorage.getItem('access_token');
+    const userInfoStr = localStorage.getItem('user_info');
+
+    if (token && userInfoStr) {
+        try {
+            const user = JSON.parse(userInfoStr);
+            userName.textContent = user.full_name || user.email;
+            userInfo.style.display = 'block';
+            loginPrompt.style.display = 'none';
+        } catch (e) {
+            console.error('Failed to parse user info', e);
+            logout();
+        }
+    } else {
+        userInfo.style.display = 'none';
+        loginPrompt.style.display = 'block';
+        // Если пользователь не авторизован и находится на главной странице,
+        // перенаправляем на страницу входа
+        if (window.location.pathname.endsWith('index.html') || window.location.pathname === '/') {
+            window.location.href = 'login.html';
+        }
+    }
+}
+
+// Выход
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_info');
+        window.location.reload();
+    });
+}
+
+// Проверка аутентификации перед запуском
+function checkAuth() {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+        alert('Для использования транскрибера необходимо войти в систему.');
+        window.location.href = 'login.html';
+        return false;
+    }
+    return true;
+}
+
 // Загрузка устройств
 async function loadDevices() {
     try {
@@ -37,10 +91,11 @@ async function loadDevices() {
         micSelect.innerHTML = mics.map(m => `<option value="${m.deviceId}">${m.label || 'Microphone ' + m.deviceId}</option>`).join('');
     } catch (e) {
         console.error("Access denied", e);
-        statusEl.textContent = "Ошибка доступа к микрофону";
+        statusEl.textContent = "Ошибка доступа к микрофонам";
     }
 }
 loadDevices();
+initAuth();
 
 // Управление UI состоянием
 function setRunningUi(isRunning) {
@@ -124,6 +179,8 @@ async function openPiP() {
 // --- Основные функции ---
 
 async function startRecording() {
+    if (!checkAuth()) return;
+
     const useMic = document.getElementById('useMic').checked;
     const useSystem = document.getElementById('useSystem').checked;
 
@@ -156,6 +213,8 @@ async function startRecording() {
 }
 
 async function startTranslation() {
+    if (!checkAuth()) return;
+
     // === 1. Получаем ссылки на чекбоксы (не просто значения!) ===
     const micCheckbox = document.getElementById('useMic');
     const systemCheckbox = document.getElementById('useSystem');
@@ -269,8 +328,15 @@ function stopTracks() {
 // --- Хелперы ---
 
 function setupWebSocket(isTranslation) {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+        alert('Токен отсутствует. Пожалуйста, войдите снова.');
+        window.location.href = 'login.html';
+        return;
+    }
+
     const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const wsUrl = wsProtocol + window.location.host + '/ws/stream';
+    const wsUrl = wsProtocol + window.location.host + '/ws/stream?token=' + encodeURIComponent(token);
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

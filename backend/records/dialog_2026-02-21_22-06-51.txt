@@ -1,0 +1,9 @@
+ТРАНСКРИПЦИЯ
+
+[22:07:31] Собеседник: Posted a message here on YouTube asking you to share some of the coolest Python libraries that you're using that you think more people should know about. So today, I'm going to share 15 libraries that are really awesome. I'm sure there's at least a few that you don't know about. These libraries can make your life easier, your code is to read, and your projects more fun. Yes. So let's dive in. First library that I wanna talk about is Penny Home, and this is a really cool utility to help you deal with dates and times. Actually, dealing with dates and times can
+
+[22:07:53] Я: Interiors now.
+
+[22:08:00] Я: Interesting. That's why it doesn't we
+
+[22:08:13] Я: listen to me. That becomes an English is the language in which we supposed to talk.

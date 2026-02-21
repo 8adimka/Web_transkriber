@@ -1,13 +1,49 @@
 services:
-  backend:
-    build: ./backend
+  postgres_auth:
+    image: postgres:16-alpine
+    container_name: postgres_auth
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: auth_password_change_in_prod_123
+      POSTGRES_DB: authdb
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    networks:
+      - transcriber-network
+    restart: unless-stopped
+
+  auth:
+    build: ./backend/services/auth
+    container_name: auth_service
+    expose:
+      - "8000"
+    volumes:
+      - ./backend/services/auth/keys:/app/keys
+      - ./backend/services/auth/app:/app/app
+    env_file:
+      - ./backend/services/auth/.env
+    environment:
+      POSTGRES_AUTH_HOST: postgres_auth
+      POSTGRES_AUTH_PORT: 5432
+      POSTGRES_AUTH_DB: authdb
+      POSTGRES_AUTH_USER: postgres
+      POSTGRES_AUTH_PASSWORD: auth_password_change_in_prod_123
+    depends_on:
+      - postgres_auth
+    restart: unless-stopped
+    networks:
+      - transcriber-network
+
+  transcriber:
+    build: ./backend/services/transcriber
     container_name: transcriber_backend
     expose:
       - "8000"
     volumes:
       - ./backend/records:/app/records
+      - ./backend/services/auth/keys:/app/keys
     env_file:
-      - ./backend/.env
+      - ./backend/services/transcriber/.env
     restart: unless-stopped
     networks:
       - transcriber-network
@@ -22,7 +58,8 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - backend
+      - auth
+      - transcriber
     restart: unless-stopped
     networks:
       - transcriber-network
@@ -30,3 +67,6 @@ services:
 networks:
   transcriber-network:
     driver: bridge
+
+volumes:
+  postgres_auth_data:

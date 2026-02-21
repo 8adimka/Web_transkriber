@@ -14,8 +14,9 @@ RECORDS_DIR = "records"
 
 
 class Session:
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, user_id: str = None):
         self.websocket = websocket
+        self.user_id = user_id
         self.transcript_log = []
         self.speaker_log = []
         self.translation_log = []
@@ -65,8 +66,8 @@ class SessionManager:
     def __init__(self):
         self.active_sessions = {}
 
-    def create(self, websocket: WebSocket) -> Session:
-        s = Session(websocket)
+    def create(self, websocket: WebSocket, user_id: str = None) -> Session:
+        s = Session(websocket, user_id)
         self.active_sessions[id(websocket)] = s
         return s
 

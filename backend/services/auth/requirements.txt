@@ -1,0 +1,16 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.16.2
+pydantic[email]==2.9.2
+pydantic-settings==2.5.2
+passlib[bcrypt,argon2]==1.7.4
+pyjwt==2.9.0
+slowapi==0.1.9
+python-multipart==0.0.9
+redis==5.1.1
+httpx==0.25.0
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+cryptography==43.0.3
