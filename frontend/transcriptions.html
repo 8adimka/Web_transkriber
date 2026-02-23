@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мои транскрипции - Web Transcriber</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div>
+                    <h1>📝 Мои транскрипции</h1>
+                    <p>Просмотр и управление сохранёнными диалогами</p>
+                </div>
+                <div class="auth-section">
+                    <a href="index.html" class="button small">← На главную</a>
+                    <button id="logoutBtn" class="button small">Выйти</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="transcriptions-container">
+            <div class="transcriptions-header">
+                <h2>Сохранённые диалоги</h2>
+                <div class="transcriptions-info" id="transcriptionsInfo">
+                    Загрузка...
+                </div>
+            </div>
+
+            <div class="transcriptions-list" id="transcriptionsList">
+                <div class="loading">Загрузка транскрипций...</div>
+            </div>
+
+            <div class="pagination" id="pagination">
+                <!-- Пагинация будет добавлена через JavaScript -->
+            </div>
+        </div>
+
+        <div class="modal" id="deleteModal" style="display: none;">
+            <div class="modal-content">
+                <h3>Удаление транскрипции</h3>
+                <p>Вы уверены, что хотите удалить эту транскрипцию? Это действие нельзя отменить.</p>
+                <div class="modal-actions">
+                    <button id="cancelDelete" class="button small">Отмена</button>
+                    <button id="confirmDelete" class="button small danger">Удалить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="transcriptions.js"></script>
+</body>
+
+</html>

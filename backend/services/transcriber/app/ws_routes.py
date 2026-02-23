@@ -64,6 +64,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
     session = session_manager.create(websocket, user_id=user_id)
+    # Переменные для хранения настроек языка
+    current_language = "RU"
+    current_translate_to = None
     logger.debug(f"WebSocket connection established: IP={client_ip}, user_id={user_id}")
 
     try:
@@ -100,9 +103,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     msg_type = data.get("type")
 
                     if msg_type == "start":
-                        language = data.get("language", "RU")
+                        current_language = data.get("language", "RU")
+                        current_translate_to = None
                         await session_manager.start_worker(
-                            session, mode="transcription", language=language
+                            session, mode="transcription", language=current_language
                         )
                         await websocket.send_json(
                             {"type": "status", "message": "Transcription started"}
@@ -111,6 +115,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     elif msg_type == "start_translation":
                         source = data.get("source_lang", "EN")
                         target = data.get("target_lang", "RU")
+                        current_language = source
+                        current_translate_to = target
                         await session_manager.start_worker(
                             session,
                             mode="translation",
@@ -122,7 +128,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         )
 
                     elif msg_type == "stop":
-                        await session_manager.stop_session(session)
+                        await session_manager.stop_session(
+                            session,
+                            language=current_language,
+                            translate_to=current_translate_to,
+                        )
                         # После остановки сессии можно выйти из цикла, т.к. клиент ожидает закрытия соединения
                         # Но оставляем соединение открытым для получения сообщения done
                         continue
@@ -154,7 +164,11 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         # Гарантируем остановку сессии и очистку ресурсов, если ещё не остановлена
         if not session.stopped:
-            await session_manager.stop_session(session)
+            await session_manager.stop_session(
+                session,
+                language=current_language,
+                translate_to=current_translate_to,
+            )
         session_manager.remove(websocket)
 
         # Удаляем регистрацию подключения из rate limiter

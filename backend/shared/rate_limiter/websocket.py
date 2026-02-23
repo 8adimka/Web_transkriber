@@ -25,7 +25,7 @@ class WebSocketRateLimiter:
         redis: Redis,
         max_connections_per_ip: int = 3,  # Лимит подключений с одного IP адреса
         max_connections_per_user: int = 1,  # Лимит подключений на одного пользователя (по user_id)
-        messages_per_minute: int = 150,  # Лимит сообщений в минуту
+        messages_per_minute: int = 1000,  # Лимит сообщений в минуту
         connection_ttl: int = 3600,  # 1 час TTL для записей о подключениях
     ):
         self._redis = redis

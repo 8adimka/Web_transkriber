@@ -444,7 +444,19 @@ function handleServerMessage(data) {
         renderTranslation(data);
     } else if (data.type === "done") {
         statusEl.textContent = "Готово";
-        if (data.file_url) {
+        if (data.download_url) {
+            // Используем новый формат с download_url
+            // Добавляем обработчик для скачивания файла с токеном
+            downloadLink.onclick = function (e) {
+                e.preventDefault();
+                downloadTranscription(data.transcription_id);
+                return false;
+            };
+            downloadLink.href = "#";
+            downloadLink.textContent = "Скачать транскрипцию";
+            downloadSection.style.display = 'block';
+        } else if (data.file_url) {
+            // Обратная совместимость со старым форматом
             downloadLink.href = data.file_url;
             downloadSection.style.display = 'block';
         }
@@ -534,4 +546,52 @@ function formatTime(ts) {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// Функция для скачивания транскрипции
+async function downloadTranscription(transcriptionId) {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+        alert('Для скачивания транскрипции необходимо войти в систему.');
+        window.location.href = 'login.html';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/transcriptions/${transcriptionId}/download?token=${encodeURIComponent(token)}`);
+
+        if (response.status === 401) {
+            alert('Сессия истекла. Пожалуйста, войдите снова.');
+            window.location.href = 'login.html';
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(`Ошибка скачивания: ${response.status}`);
+        }
+
+        // Получаем имя файла из заголовков
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `transcription_${transcriptionId}.txt`;
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="(.+)"/);
+            if (match) {
+                filename = match[1];
+            }
+        }
+
+        // Создаем blob и скачиваем
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('Ошибка скачивания:', error);
+        alert(`Ошибка скачивания: ${error.message}`);
+    }
 }

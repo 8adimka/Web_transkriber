@@ -1,64 +1,79 @@
 import asyncio
 import logging
-import os
+from typing import Optional
 
-import aiofiles
 from fastapi import WebSocket
 
-from .audio_processor import (
-    UniversalProcessor,  # Импорт изменён на audio_processor (теперь там UniversalProcessor)
-)
+from .audio_processor import UniversalProcessor
 from .utils import get_timestamp_filename
-
-RECORDS_DIR = "records"
 
 
 class Session:
-    def __init__(self, websocket: WebSocket, user_id: str = None):
+    def __init__(self, websocket: WebSocket, user_id: Optional[str] = None):
         self.websocket = websocket
         self.user_id = user_id
         self.transcript_log = []
         self.speaker_log = []
         self.translation_log = []
         self.filename = get_timestamp_filename()
-        self.processor = None
-        self.processor_task = None
+        self.processor: Optional[UniversalProcessor] = None
+        self.processor_task: Optional[asyncio.Task] = None
         self.active = True
         self.mode = "transcription"
         self.stopped = False
 
-    def append_transcript(self, text, speaker=""):
+    def append_transcript(self, text: str, speaker: str = ""):
         self.transcript_log.append(text)
         self.speaker_log.append(speaker)
 
-    def append_translation(self, text):
+    def append_translation(self, text: str):
         self.translation_log.append(text)
 
-    async def save_file(self):
+    async def save_to_db(
+        self, language: str = "RU", translate_to: Optional[str] = None
+    ) -> Optional[int]:
+        """Сохраняет транскрипцию в БД и возвращает ID записи"""
         if self.mode != "transcription":
-            return None  # Для перевода не сохраняем ничего
+            return None  # Для перевода не сохраняем в БД
         if not self.transcript_log:
-            return None  # Не сохраняем пустой файл для транскрипции
-        os.makedirs(RECORDS_DIR, exist_ok=True)
-        path = os.path.join(RECORDS_DIR, self.filename)
+            return None  # Не сохраняем пустую транскрипцию
+
         try:
-            async with aiofiles.open(path, "w", encoding="utf-8") as f:
-                await f.write("ТРАНСКРИПЦИЯ\n\n")
-                # Если есть процессор UniversalProcessor, используем его метод для получения текста с временем
-                if isinstance(self.processor, UniversalProcessor):
-                    dialog_text = self.processor.get_dialog_text()
-                    await f.write(dialog_text)
-                else:
-                    # Старый способ (без времени)
-                    for t, s in zip(self.transcript_log, self.speaker_log):
-                        sp = "Я" if s == "me" else "Собеседник"
-                        await f.write(f"{sp}: {t}\n\n")
-            logger = logging.getLogger("Session")
-            logger.info(f"Файл транскрипции сохранен: {path}")
-            return path
+            # Получаем текст транскрипции
+            content = "ТРАНСКРИПЦИЯ\n\n"
+            if self.processor and isinstance(self.processor, UniversalProcessor):
+                content += self.processor.get_dialog_text()
+            else:
+                # Старый способ (без времени)
+                for t, s in zip(self.transcript_log, self.speaker_log):
+                    sp = "Я" if s == "me" else "Собеседник"
+                    content += f"{sp}: {t}\n\n"
+
+            # Сохраняем в БД (синхронно, но в отдельном потоке)
+            from .crud import create_transcription
+            from .database import SessionLocal
+
+            db = SessionLocal()
+            try:
+                transcription = create_transcription(
+                    db=db,
+                    user_id=int(self.user_id) if self.user_id else 0,
+                    filename=self.filename,
+                    content=content,
+                    orig_language=language,
+                    translate_to=translate_to,
+                    file_size=len(content.encode("utf-8")),
+                )
+                logger = logging.getLogger("Session")
+                transcription_id = transcription.id  # Получаем значение ID
+                logger.info(f"Транскрипция сохранена в БД: ID={transcription_id}")
+                return transcription_id
+            finally:
+                db.close()
+
         except Exception as e:
             logger = logging.getLogger("Session")
-            logger.error(f"Ошибка сохранения файла: {e}")
+            logger.error(f"Ошибка сохранения транскрипции в БД: {e}")
             return None
 
 
@@ -66,7 +81,7 @@ class SessionManager:
     def __init__(self):
         self.active_sessions = {}
 
-    def create(self, websocket: WebSocket, user_id: str = None) -> Session:
+    def create(self, websocket: WebSocket, user_id: Optional[str] = None) -> Session:
         s = Session(websocket, user_id)
         self.active_sessions[id(websocket)] = s
         return s
@@ -89,7 +104,9 @@ class SessionManager:
         )
         session.processor_task = asyncio.create_task(session.processor.start())
 
-    async def stop_session(self, session: Session):
+    async def stop_session(
+        self, session: Session, language: str = "RU", translate_to: Optional[str] = None
+    ):
         if session.stopped:
             return
         session.stopped = True
@@ -103,13 +120,19 @@ class SessionManager:
         if session.processor_task:
             session.processor_task.cancel()
 
-        path = await session.save_file()
+        # Сохраняем в БД вместо файла
+        transcription_id = await session.save_to_db(
+            language=language, translate_to=translate_to
+        )
         msg = {"type": "done", "message": "Готово"}
-        if path:
-            msg["file_url"] = f"/download/{session.filename}"
-            logger.info(f"Файл доступен для скачивания: {msg['file_url']}")
+        if transcription_id:
+            msg["transcription_id"] = str(transcription_id)
+            # Формируем URL для скачивания с токеном
+            # Токен будет добавлен фронтендом при скачивании
+            msg["download_url"] = f"/transcriptions/{transcription_id}/download"
+            logger.info(f"Транскрипция сохранена в БД: ID={transcription_id}")
         else:
-            logger.info("Файл не сохранен (режим перевода или ошибка)")
+            logger.info("Транскрипция не сохранена (режим перевода или ошибка)")
 
         try:
             await session.websocket.send_json(msg)
