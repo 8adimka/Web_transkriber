@@ -149,7 +149,7 @@ def download_transcription(
     return Response(
         content=transcription.content,
         media_type="text/plain",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

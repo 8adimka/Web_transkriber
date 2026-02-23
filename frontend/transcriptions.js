@@ -200,9 +200,17 @@ async function downloadTranscription(id) {
         const contentDisposition = response.headers.get('Content-Disposition');
         let filename = `transcription_${id}.txt`;
         if (contentDisposition) {
-            const match = contentDisposition.match(/filename="(.+)"/);
+            // Пробуем разные форматы заголовка Content-Disposition
+            let match = contentDisposition.match(/filename="(.+?)"/);  // С кавычками
+            if (!match) {
+                match = contentDisposition.match(/filename=([^;]+)/);  // Без кавычек
+            }
             if (match) {
-                filename = match[1];
+                filename = match[1].trim();
+                // Убираем кавычки, если они есть
+                if (filename.startsWith('"') && filename.endsWith('"')) {
+                    filename = filename.slice(1, -1);
+                }
             }
         }
 
