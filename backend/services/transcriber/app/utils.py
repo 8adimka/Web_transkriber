@@ -15,4 +15,4 @@ logger = logging.getLogger("App")
 def get_timestamp_filename():
     """Генерирует имя файла на основе текущего времени"""
     now = datetime.now()
-    return f"dialog_{now.strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+    return f"dialog_{now.strftime('%d.%m.%Y_%H.%M')}.txt"

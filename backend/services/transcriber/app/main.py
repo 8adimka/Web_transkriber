@@ -134,13 +134,22 @@ def download_transcription(
             detail="Transcription not found or access denied",
         )
 
+    # Формируем имя файла на основе даты создания
+    # Используем дату из created_at, если она есть
+    created_at_value = transcription.created_at
+    if created_at_value is not None:
+        # Форматируем дату в удобный формат для имени файла (23.02.2026_16.28)
+        date_str = created_at_value.strftime("%d.%m.%Y_%H.%M")
+        filename = f"dialog_{date_str}.txt"
+    else:
+        # Используем сохраненное имя файла как fallback
+        filename = transcription.filename
+
     # Генерируем файл на лету
     return Response(
         content=transcription.content,
         media_type="text/plain",
-        headers={
-            "Content-Disposition": f"attachment; filename={transcription.filename}"
-        },
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
