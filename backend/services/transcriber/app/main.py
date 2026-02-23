@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from backend.shared.rate_limiter.metrics import router as rate_limiter_router
+
 from .dependencies import verify_token
 from .ws_routes import router as ws_router
 
@@ -20,6 +22,7 @@ app.add_middleware(
 
 # Подключение роутов
 app.include_router(ws_router)
+app.include_router(rate_limiter_router, tags=["rate-limiter"])
 
 RECORDS_DIR = "records"
 

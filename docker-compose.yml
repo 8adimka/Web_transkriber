@@ -14,17 +14,24 @@ services:
 
   redis_container:
     image: redis:7
+    container_name: redis_container
     ports:
       - "6379:6379"
+    networks:
+      - transcriber-network
+    restart: unless-stopped
 
   auth:
-    build: ./backend/services/auth
+    build:
+      context: .
+      dockerfile: backend/services/auth/Dockerfile
     container_name: auth_service
     expose:
       - "8000"
     volumes:
       - ./backend/services/auth/keys:/app/keys
       - ./backend/services/auth/app:/app/app
+      - ./backend/shared:/app/backend/shared
     env_file:
       - ./backend/services/auth/.env
     environment:
@@ -33,22 +40,33 @@ services:
       POSTGRES_AUTH_DB: authdb
       POSTGRES_AUTH_USER: postgres
       POSTGRES_AUTH_PASSWORD: auth_password_change_in_prod_123
+      REDIS_HOST: redis_container
+      REDIS_PORT: 6379
     depends_on:
       - postgres_auth
+      - redis_container
     restart: unless-stopped
     networks:
       - transcriber-network
 
   transcriber:
-    build: ./backend/services/transcriber
+    build:
+      context: .
+      dockerfile: backend/services/transcriber/Dockerfile
     container_name: transcriber_backend
     expose:
       - "8000"
     volumes:
       - ./backend/records:/app/records
       - ./backend/services/auth/keys:/app/keys
+      - ./backend/shared:/app/backend/shared
     env_file:
       - ./backend/services/transcriber/.env
+    environment:
+      REDIS_HOST: redis_container
+      REDIS_PORT: 6379
+    depends_on:
+      - redis_container
     restart: unless-stopped
     networks:
       - transcriber-network

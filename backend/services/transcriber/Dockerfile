@@ -8,11 +8,12 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Копирование зависимостей и установка
-COPY requirements.txt .
+COPY backend/services/transcriber/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование кода
-COPY . .
+# Копируем shared директорию и transcriber сервис
+COPY backend/shared/ ./backend/shared/
+COPY backend/services/transcriber/app/ ./app/
 
 # Создание папки для записей
 RUN mkdir -p records

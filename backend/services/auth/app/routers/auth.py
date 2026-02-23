@@ -9,6 +9,8 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from sqlalchemy.orm import Session
 
+from backend.shared.rate_limiter.base import rate_limiter_factory
+
 from .. import crud, schemas
 from ..config import settings
 from ..crud import (
@@ -55,8 +57,41 @@ def render_error_html(message: str, status_code: int = 400) -> HTMLResponse:
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Rate limiting dependencies
+register_rate_limit = rate_limiter_factory(
+    endpoint="auth_register",
+    max_requests=3,  # 3 запроса
+    window_seconds=10,  # за 10 секунд
+    identifier_type="ip",
+)
 
-@router.post("/register/", response_model=schemas.AuthResponse)
+login_rate_limit = rate_limiter_factory(
+    endpoint="auth_login",
+    max_requests=5,  # 5 запросов
+    window_seconds=60,  # за минуту
+    identifier_type="ip",
+)
+
+google_login_rate_limit = rate_limiter_factory(
+    endpoint="auth_google_login",
+    max_requests=10,  # 10 запросов
+    window_seconds=60,  # за минуту
+    identifier_type="ip",
+)
+
+refresh_rate_limit = rate_limiter_factory(
+    endpoint="auth_refresh",
+    max_requests=10,  # 10 запросов
+    window_seconds=60,  # за минуту
+    identifier_type="ip",
+)
+
+
+@router.post(
+    "/register/",
+    response_model=schemas.AuthResponse,
+    dependencies=[Depends(register_rate_limit)],
+)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, user.email)
     if db_user:
@@ -76,7 +111,11 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/token/", response_model=schemas.AuthResponse)
+@router.post(
+    "/token/",
+    response_model=schemas.AuthResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
 def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
@@ -101,7 +140,11 @@ def login_for_access_token(
     }
 
 
-@router.post("/refresh/", response_model=schemas.AuthResponse)
+@router.post(
+    "/refresh/",
+    response_model=schemas.AuthResponse,
+    dependencies=[Depends(refresh_rate_limit)],
+)
 def refresh_tokens(
     refresh_request: schemas.RefreshTokenRequest, db: Session = Depends(get_db)
 ):
@@ -126,7 +169,7 @@ def refresh_tokens(
     }
 
 
-@router.get("/google/login")
+@router.get("/google/login", dependencies=[Depends(google_login_rate_limit)])
 def google_login(request: Request):
     if not settings.google_client_id:
         raise HTTPException(status_code=500, detail="Google client id not configured")

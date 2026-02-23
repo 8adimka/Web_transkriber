@@ -14,3 +14,4 @@ httpx==0.25.0
 google-auth==2.25.2
 google-auth-oauthlib==1.2.0
 cryptography==43.0.3
+sqlalchemy

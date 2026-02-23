@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers.auth import router
+from backend.shared.rate_limiter.metrics import router as rate_limiter_router
+
+from .routers.auth import router as auth_router
 
 app = FastAPI(title="Auth Service")
 
@@ -17,7 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router, tags=["auth"])
+app.include_router(auth_router, tags=["auth"])
+app.include_router(rate_limiter_router, tags=["rate-limiter"])
 
 
 @app.get("/health")
