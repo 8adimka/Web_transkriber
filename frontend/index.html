@@ -17,10 +17,19 @@
                     <p>Захват звука с микрофона и вкладок браузера</p>
                 </div>
                 <div id="authSection" class="auth-section">
-                    <div id="userInfo" style="display: none;">
-                        <span id="userName"></span>
-                        <a href="transcriptions.html" class="button small">📝 Мои транскрипции</a>
-                        <button id="logoutBtn" class="button small">Выйти</button>
+                    <div id="userInfo" style="display: none;" class="user-info-header">
+                        <div class="user-avatar-container">
+                            <img id="userAvatarSmall" src="" alt="Аватар" class="avatar-small"
+                                onerror="this.src='https://via.placeholder.com/40'">
+                        </div>
+                        <div class="user-details">
+                            <span id="userName"></span>
+                            <div class="user-actions">
+                                <a href="profile.html" class="button tiny">👤 Профиль</a>
+                                <a href="transcriptions.html" class="button tiny">📝 Транскрипции</a>
+                                <button id="logoutBtn" class="button tiny">Выйти</button>
+                            </div>
+                        </div>
                     </div>
                     <div id="loginPrompt">
                         <a href="login.html" class="button small">Войти</a>

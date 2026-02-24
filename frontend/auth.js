@@ -2,6 +2,10 @@
 const TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_INFO_KEY = 'user_info';
+const USER_SETTINGS_KEY = 'user_settings';
+
+// Базовый URL для API запросов
+const API_BASE_URL = window.location.protocol === 'https:' ? 'https://localhost' : 'http://localhost:8000';
 
 // Сохранение токенов
 function saveTokens(accessToken, refreshToken, userInfo) {
@@ -34,6 +38,7 @@ function logout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_INFO_KEY);
+    localStorage.removeItem(USER_SETTINGS_KEY);
     window.location.href = 'login.html';
 }
 
@@ -46,7 +51,7 @@ async function refreshAccessToken() {
     }
 
     try {
-        const response = await fetch('/auth/refresh/', {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -104,6 +109,179 @@ async function authFetch(url, options = {}) {
     return response;
 }
 
+// Обновление UI пользователя (кликабельное имя и аватар)
+function updateUserUI() {
+    const userInfo = getUserInfo();
+    const userNameElement = document.getElementById('userName');
+    const userInfoDiv = document.getElementById('userInfo');
+    const loginPromptDiv = document.getElementById('loginPrompt');
+    const userAvatarSmall = document.getElementById('userAvatarSmall');
+
+    if (userInfo && userNameElement && userInfoDiv && loginPromptDiv) {
+        // Обновляем имя пользователя
+        userNameElement.textContent = userInfo.full_name || userInfo.email;
+
+        // Обновляем аватар
+        if (userAvatarSmall) {
+            const avatarUrl = userInfo.picture_url;
+            if (avatarUrl) {
+                userAvatarSmall.src = avatarUrl;
+                userAvatarSmall.onerror = function () {
+                    console.warn('Не удалось загрузить аватар:', avatarUrl);
+                    this.src = 'https://via.placeholder.com/40';
+                };
+            } else {
+                userAvatarSmall.src = 'https://via.placeholder.com/40';
+            }
+        }
+
+        // Показываем блок пользователя
+        userInfoDiv.style.display = 'flex';
+        loginPromptDiv.style.display = 'none';
+
+        // Добавляем обработчик выхода
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', logout);
+        }
+    } else if (loginPromptDiv) {
+        // Показываем блок входа
+        if (userInfoDiv) userInfoDiv.style.display = 'none';
+        loginPromptDiv.style.display = 'block';
+    }
+}
+
+// Загрузка настроек пользователя
+async function loadUserSettings() {
+    const token = getAccessToken();
+    if (!token) return null;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/user/settings`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(data.settings));
+            return data.settings;
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки настроек:', error);
+    }
+
+    return null;
+}
+
+// Получение сохраненных настроек
+function getUserSettings() {
+    const settings = localStorage.getItem(USER_SETTINGS_KEY);
+    return settings ? JSON.parse(settings) : null;
+}
+
+// Применение настроек к главной странице
+function applyUserSettings() {
+    const settings = getUserSettings();
+    if (!settings) return;
+
+    // Применяем настройки к элементам на главной странице
+    const useMicCheckbox = document.getElementById('useMic');
+    const useSystemCheckbox = document.getElementById('useSystem');
+    const sourceLangSelect = document.getElementById('sourceLang');
+    const targetLangSelect = document.getElementById('targetLang');
+
+    if (useMicCheckbox) useMicCheckbox.checked = settings.microphone_enabled;
+    if (useSystemCheckbox) useSystemCheckbox.checked = settings.tab_audio_enabled;
+    if (sourceLangSelect) sourceLangSelect.value = settings.original_language;
+    if (targetLangSelect) targetLangSelect.value = settings.translation_language;
+}
+
+// Сохранение настроек при изменении на главной странице
+function setupSettingsAutoSave() {
+    const useMicCheckbox = document.getElementById('useMic');
+    const useSystemCheckbox = document.getElementById('useSystem');
+    const sourceLangSelect = document.getElementById('sourceLang');
+    const targetLangSelect = document.getElementById('targetLang');
+
+    if (!useMicCheckbox || !useSystemCheckbox || !sourceLangSelect || !targetLangSelect) {
+        return;
+    }
+
+    const saveSettings = debounce(async () => {
+        const token = getAccessToken();
+        if (!token) return;
+
+        const settings = {
+            microphone_enabled: useMicCheckbox.checked,
+            tab_audio_enabled: useSystemCheckbox.checked,
+            original_language: sourceLangSelect.value,
+            translation_language: targetLangSelect.value
+        };
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/user/settings`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Ошибка сохранения: ${response.status}`);
+            }
+
+            // Обновляем локальные настройки
+            localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(settings));
+            console.log('Настройки сохранены:', settings);
+        } catch (error) {
+            console.error('Ошибка сохранения настроек:', error);
+        }
+    }, 1000);
+
+    // Добавляем обработчики
+    useMicCheckbox.addEventListener('change', saveSettings);
+    useSystemCheckbox.addEventListener('change', saveSettings);
+    sourceLangSelect.addEventListener('change', saveSettings);
+    targetLangSelect.addEventListener('change', saveSettings);
+}
+
+// Синхронизация настроек из Redis при загрузке страницы
+async function syncSettingsFromRedis() {
+    const token = getAccessToken();
+    if (!token) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/user/settings/redis/sync`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            console.log('Настройки синхронизированы из Redis');
+        }
+    } catch (error) {
+        console.error('Ошибка синхронизации настроек из Redis:', error);
+    }
+}
+
+// Вспомогательная функция debounce
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Обработка формы входа
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
@@ -121,7 +299,7 @@ if (document.getElementById('loginForm')) {
         statusEl.className = 'status-bar';
 
         try {
-            const response = await fetch('/auth/token/', {
+            const response = await fetch(`${API_BASE_URL}/auth/token/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -142,6 +320,9 @@ if (document.getElementById('loginForm')) {
                 picture_url: result.picture_url,
                 auth_provider: result.auth_provider,
             });
+
+            // Загружаем настройки пользователя
+            await loadUserSettings();
 
             statusEl.textContent = 'Успешный вход! Перенаправление...';
             statusEl.className = 'status-bar success';
@@ -182,7 +363,7 @@ if (document.getElementById('registerForm')) {
         statusEl.className = 'status-bar';
 
         try {
-            const response = await fetch('/auth/register/', {
+            const response = await fetch(`${API_BASE_URL}/auth/register/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -204,6 +385,9 @@ if (document.getElementById('registerForm')) {
                 auth_provider: result.auth_provider,
             });
 
+            // Загружаем настройки пользователя
+            await loadUserSettings();
+
             statusEl.textContent = 'Регистрация успешна! Перенаправление...';
             statusEl.className = 'status-bar success';
             setTimeout(() => {
@@ -223,7 +407,7 @@ function initGoogleAuth() {
 
     googleBtn.addEventListener('click', async () => {
         try {
-            const response = await fetch('/auth/google/login');
+            const response = await fetch(`${API_BASE_URL}/auth/google/login`);
             if (!response.ok) {
                 throw new Error('Failed to get Google login URL');
             }
@@ -248,4 +432,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isAuthenticated() && (window.location.pathname.includes('login.html') || window.location.pathname.includes('register.html'))) {
         window.location.href = 'index.html';
     }
+
+    // Обновляем UI пользователя
+    updateUserUI();
+
+    // Загружаем и применяем настройки на главной странице
+    if (window.location.pathname.includes('index.html')) {
+        loadUserSettings().then(() => {
+            applyUserSettings();
+            setupSettingsAutoSave();
+            // Синхронизируем настройки из Redis
+            syncSettingsFromRedis();
+        });
+    }
 });
+
+// Экспорт функций для использования в других файлах
+window.auth = {
+    getAccessToken,
+    getRefreshToken,
+    getUserInfo,
+    isAuthenticated,
+    logout,
+    authFetch,
+    loadUserSettings,
+    getUserSettings,
+    updateUserUI
+};

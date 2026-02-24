@@ -39,6 +39,8 @@ services:
       context: .
       dockerfile: backend/services/auth/Dockerfile
     container_name: auth_service
+    ports:
+      - "8000:8000"
     expose:
       - "8000"
     volumes:
@@ -67,6 +69,8 @@ services:
       context: .
       dockerfile: backend/services/transcriber/Dockerfile
     container_name: transcriber_backend
+    ports:
+      - "8001:8000"
     expose:
       - "8000"
     volumes:

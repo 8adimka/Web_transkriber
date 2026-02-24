@@ -94,12 +94,22 @@ class SessionManager:
         self, session: Session, mode: str = "transcription", **kwargs
     ):
         session.mode = mode
+        # Преобразуем user_id в int, если он есть
+        user_id_int = None
+        if session.user_id:
+            try:
+                user_id_int = int(session.user_id)
+            except (ValueError, TypeError):
+                logger = logging.getLogger("SessionManager")
+                logger.warning(f"Invalid user_id format: {session.user_id}")
+
         session.processor = UniversalProcessor(
             session.websocket,
             session.append_transcript
             if mode == "transcription"
             else session.append_translation,
             mode=mode,
+            user_id=user_id_int,
             **kwargs,
         )
         session.processor_task = asyncio.create_task(session.processor.start())

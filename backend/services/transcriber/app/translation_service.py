@@ -4,6 +4,8 @@ from typing import Dict, Optional
 
 import httpx
 
+from backend.shared.token_tracker import get_token_tracker
+
 logger = logging.getLogger("TranslationService")
 
 DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
@@ -22,6 +24,8 @@ class TranslationService:
         # Кэш переводов: "Original text" -> "Translated text"
         # Это критически важно для interim результатов, чтобы не дублировать запросы
         self.cache: Dict[str, str] = {}
+        # Token tracker для учёта использования
+        self.token_tracker = get_token_tracker()
 
     async def start(self):
         self.client = httpx.AsyncClient(
@@ -42,10 +46,25 @@ class TranslationService:
         if self.client:
             await self.client.aclose()
 
-    async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
+    async def translate(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        user_id: Optional[int] = None,
+    ) -> str:
         """
         Переводит текст. Если текст уже был переведен ранее (например, в interim),
         возвращает результат из кэша мгновенно.
+
+        Args:
+            text: текст для перевода
+            source_lang: исходный язык
+            target_lang: целевой язык
+            user_id: ID пользователя для учёта токенов (опционально)
+
+        Returns:
+            Переведённый текст
         """
         if not text or not text.strip():
             return ""
@@ -82,6 +101,19 @@ class TranslationService:
                 translated = result_json["translations"][0]["text"]
                 # Сохраняем в кэш
                 self.cache[cache_key] = translated
+
+                # Учитываем использование DeepL, если передан user_id
+                if user_id is not None:
+                    metadata = {
+                        "original_text": text_key,
+                        "translated_text": translated,
+                        "source_lang": source_lang,
+                        "target_lang": target_lang,
+                    }
+                    await self.token_tracker.track_deepl_usage(
+                        user_id=user_id, text=text_key, metadata=metadata
+                    )
+
                 return translated
 
             return text

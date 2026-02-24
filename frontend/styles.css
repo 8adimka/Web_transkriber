@@ -271,15 +271,82 @@ select {
     background-color: #5a6268;
 }
 
-#userInfo {
+/* Стили для блока с аватаром */
+.user-info-header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.user-avatar-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-small {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #4CAF50;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
 #userName {
     font-weight: 600;
     color: #333;
+    font-size: 14px;
+}
+
+.user-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.user-actions .button.tiny {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    color: #495057;
+    border: none;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.user-actions .button.tiny:hover {
+    background-color: #dee2e6;
+    transform: translateY(-1px);
+}
+
+.user-actions .button.tiny:active {
+    transform: translateY(0);
+}
+
+/* Стили для кликабельного имени пользователя */
+.user-name-link {
+    color: #2196F3;
+    text-decoration: none;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.user-name-link:hover {
+    background-color: #f0f7ff;
+    text-decoration: underline;
 }
 
 .auth-container {

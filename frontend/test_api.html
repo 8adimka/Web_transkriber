@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест API</title>
+</head>
+
+<body>
+    <h1>Тест API пользователя</h1>
+
+    <div>
+        <h2>1. Регистрация</h2>
+        <input type="email" id="email" placeholder="Email" value="testapi@example.com">
+        <input type="password" id="password" placeholder="Password" value="test123">
+        <button onclick="register()">Зарегистрироваться</button>
+        <div id="registerResult"></div>
+    </div>
+
+    <div>
+        <h2>2. Получение настроек</h2>
+        <button onclick="getSettings()">Получить настройки</button>
+        <div id="settingsResult"></div>
+    </div>
+
+    <div>
+        <h2>3. Обновление настроек</h2>
+        <button onclick="updateSettings()">Обновить настройки</button>
+        <div id="updateResult"></div>
+    </div>
+
+    <div>
+        <h2>4. Статистика токенов</h2>
+        <button onclick="getStats()">Получить статистику</button>
+        <div id="statsResult"></div>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('access_token');
+
+        function register() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            fetch('/auth/register/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                    full_name: 'Test API User'
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('registerResult').innerHTML =
+                        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+
+                    if (data.access_token) {
+                        token = data.access_token;
+                        localStorage.setItem('access_token', token);
+                        console.log('Токен сохранен:', token);
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('registerResult').innerHTML =
+                        `Ошибка: ${error.message}`;
+                });
+        }
+
+        function getSettings() {
+            if (!token) {
+                alert('Сначала зарегистрируйтесь');
+                return;
+            }
+
+            fetch('/user/settings', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('settingsResult').innerHTML =
+                        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                })
+                .catch(error => {
+                    document.getElementById('settingsResult').innerHTML =
+                        `Ошибка: ${error.message}`;
+                });
+        }
+
+        function updateSettings() {
+            if (!token) {
+                alert('Сначала зарегистрируйтесь');
+                return;
+            }
+
+            fetch('/user/settings', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    microphone_enabled: false,
+                    original_language: 'EN',
+                    translation_language: 'RU'
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('updateResult').innerHTML =
+                        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                })
+                .catch(error => {
+                    document.getElementById('updateResult').innerHTML =
+                        `Ошибка: ${error.message}`;
+                });
+        }
+
+        function getStats() {
+            if (!token) {
+                alert('Сначала зарегистрируйтесь');
+                return;
+            }
+
+            fetch('/user/stats/summary', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('statsResult').innerHTML =
+                        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                })
+                .catch(error => {
+                    document.getElementById('statsResult').innerHTML =
+                        `Ошибка: ${error.message}`;
+                });
+        }
+
+        // Проверяем, есть ли токен
+        if (token) {
+            console.log('Токен найден в localStorage');
+        }
+    </script>
+</body>
+
+</html>

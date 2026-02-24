@@ -7,6 +7,8 @@ from typing import Callable, List, Optional
 
 from websockets.client import connect as ws_connect
 
+from backend.shared.token_tracker import get_token_tracker
+
 from .translation_service import translation_service
 
 logger = logging.getLogger("UniversalProcessor")
@@ -106,6 +108,7 @@ class UniversalProcessor:
         language: str = "RU",
         source_lang: Optional[str] = None,
         target_lang: Optional[str] = None,
+        user_id: Optional[int] = None,
     ):
         self.client_ws = client_ws
         self.callback = callback
@@ -113,6 +116,7 @@ class UniversalProcessor:
         self.language = language if mode == "transcription" else source_lang
         self.source_lang = source_lang
         self.target_lang = target_lang
+        self.user_id = user_id
         self.need_translation = (
             mode == "translation"
             and source_lang
@@ -134,6 +138,9 @@ class UniversalProcessor:
 
         # Для translation (accumulation для контекста)
         self.current_phrase: str = ""
+
+        # Token tracker
+        self.token_tracker = get_token_tracker()
 
         # Настройка потоков
         if self.mode == "transcription":
@@ -252,6 +259,22 @@ class UniversalProcessor:
                             self._add_to_history(item)
                             self.callback(transcript, speaker_source)
 
+                            # Трекинг использования DeepGram
+                            if self.user_id:
+                                # Оцениваем длину аудио: примерно 2.5 секунды на финальный сегмент
+                                # (endpointing=3500 означает сегменты длиной ~3.5 секунды, но консервативно 2.5)
+                                audio_seconds = 2.5
+                                metadata = {
+                                    "transcript": transcript,
+                                    "speaker": speaker_source,
+                                    "segment_length": audio_seconds,
+                                }
+                                await self.token_tracker.track_deepgram_usage(
+                                    user_id=self.user_id,
+                                    audio_seconds=audio_seconds,
+                                    metadata=metadata,
+                                )
+
                         await self.client_ws.send_json(
                             {
                                 "type": "transcript",
@@ -267,11 +290,32 @@ class UniversalProcessor:
                         full_phrase = transcript.strip()
                         translated = (
                             await translation_service.translate(
-                                full_phrase, self.source_lang, self.target_lang
+                                full_phrase,
+                                self.source_lang,
+                                self.target_lang,
+                                user_id=self.user_id,
                             )
                             if self.need_translation
                             else full_phrase
                         )
+
+                        # Трекинг использования DeepGram для перевода (в любом случае)
+                        if self.user_id and is_final:
+                            # Оцениваем длину аудио: примерно 2.5 секунды на финальный сегмент
+                            audio_seconds = 2.5
+                            metadata = {
+                                "transcript": full_phrase,
+                                "translated": translated
+                                if self.need_translation
+                                else None,
+                                "mode": "translation",
+                                "segment_length": audio_seconds,
+                            }
+                            await self.token_tracker.track_deepgram_usage(
+                                user_id=self.user_id,
+                                audio_seconds=audio_seconds,
+                                metadata=metadata,
+                            )
 
                         if is_final:
                             self.callback(

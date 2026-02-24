@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -99,3 +101,73 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if len(plain_password.encode("utf-8")) > 72:
         plain_password = plain_password[:72]
     return pwd_context.verify(plain_password, hashed_password)
+
+
+# UserSettings CRUD operations
+def get_user_settings(db: Session, user_id: int):
+    """Получить настройки пользователя, создавая их если не существуют"""
+    settings = (
+        db.query(models.UserSettings)
+        .filter(models.UserSettings.user_id == user_id)
+        .first()
+    )
+    if not settings:
+        # Создаём настройки по умолчанию
+        settings = models.UserSettings(
+            user_id=user_id,
+            microphone_enabled=False,  # Микрофон выключен по умолчанию
+            tab_audio_enabled=True,
+            original_language="RU",
+            translation_language="EN",
+            avatar_url=None,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+
+def update_user_settings(db: Session, user_id: int, settings_update: dict):
+    """Обновить настройки пользователя"""
+    settings = get_user_settings(db, user_id)
+
+    # Обновляем только переданные поля
+    for key, value in settings_update.items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+
+    settings.updated_at = datetime.now(timezone.utc)
+    db.add(settings)
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+def get_user_profile(db: Session, user_id: int):
+    """Получить профиль пользователя с настройками и базовой информацией"""
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+
+    settings = get_user_settings(db, user_id)
+
+    return {
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "picture_url": user.picture_url,
+            "auth_provider": user.auth_provider,
+            "created_at": user.created_at,
+        },
+        "settings": {
+            "microphone_enabled": settings.microphone_enabled,
+            "tab_audio_enabled": settings.tab_audio_enabled,
+            "original_language": settings.original_language,
+            "translation_language": settings.translation_language,
+            "avatar_url": settings.avatar_url,
+            "updated_at": settings.updated_at,
+        },
+    }
