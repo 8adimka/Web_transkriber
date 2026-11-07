@@ -1,59 +1,26 @@
 <!DOCTYPE html>
-<html lang="ru">
-
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мои транскрипции - Web Transcriber</title>
+    <title data-i18n="saved.title">Saved texts</title>
+    <script src="ui.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
     <div class="container">
-        <header>
-            <div class="header-top">
-                <div>
-                    <h1>📝 Мои транскрипции</h1>
-                    <p>Просмотр и управление сохранёнными диалогами</p>
-                </div>
-                <div class="auth-section">
-                    <a href="index.html" class="button small">← На главную</a>
-                    <button id="logoutBtn" class="button small">Выйти</button>
-                </div>
-            </div>
-        </header>
+        <header class="app-header"><nav class="workspace-nav" aria-label="Main navigation" data-i18n-aria-label="nav.main"><a href="index.html" data-i18n="nav.workspace">Workspace</a><a href="transcriptions.html" aria-current="page" data-i18n="nav.saved">Saved texts</a><a href="profile.html" data-i18n="nav.profile">Profile</a></nav><div class="header-actions"><label class="interface-language"><span class="sr-only" data-i18n="common.interfaceLanguage">Interface language</span><select data-ui-language aria-label="Interface language" data-i18n-aria-label="common.interfaceLanguage"><option value="en">English</option><option value="ru">Русский</option></select></label><label class="theme-toggle"><span data-i18n="theme.label">Dark mode</span><span class="theme-switch"><input type="checkbox" role="switch" data-theme-toggle data-i18n-aria-label="common.themeToggle" aria-label="Switch dark mode" checked><span class="switch-track" aria-hidden="true"></span></span></label><div id="authSection" class="auth-section"><div id="userInfo" class="user-info-header" style="display:none;"><span id="userName" class="user-email"></span><button type="button" id="logoutBtn" class="button small secondary" data-i18n="nav.logout">Log out</button></div><div id="loginPrompt"><a href="login.html" data-i18n="nav.login">Log in</a></div></div></div></header>
 
-        <div class="transcriptions-container">
-            <div class="transcriptions-header">
-                <h2>Сохранённые диалоги</h2>
-                <div class="transcriptions-info" id="transcriptionsInfo">
-                    Загрузка...
-                </div>
-            </div>
-
-            <div class="transcriptions-list" id="transcriptionsList">
-                <div class="loading">Загрузка транскрипций...</div>
-            </div>
-
-            <div class="pagination" id="pagination">
-                <!-- Пагинация будет добавлена через JavaScript -->
-            </div>
-        </div>
-
-        <div class="modal" id="deleteModal" style="display: none;">
-            <div class="modal-content">
-                <h3>Удаление транскрипции</h3>
-                <p>Вы уверены, что хотите удалить эту транскрипцию? Это действие нельзя отменить.</p>
-                <div class="modal-actions">
-                    <button id="cancelDelete" class="button small">Отмена</button>
-                    <button id="confirmDelete" class="button small danger">Удалить</button>
-                </div>
-            </div>
-        </div>
+<main class="transcriptions-container">
+    <div class="page-heading"><h1 data-i18n="saved.title">Saved texts</h1><p data-i18n="saved.subtitle">Your transcripts and translations, all in one place.</p></div>
+    <div class="transcriptions-header"><div class="transcriptions-info" id="transcriptionsInfo" role="status" data-i18n="common.loading">Loading…</div></div>
+    <div class="transcriptions-list" id="transcriptionsList"><div class="loading" data-i18n="saved.loading">Loading your texts…</div></div>
+    <nav class="pagination" id="pagination" aria-label="Pagination" data-i18n-aria-label="saved.pagination"></nav>
+</main>
+<div class="modal" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle" aria-describedby="deleteDescription" style="display:none;">
+    <div class="modal-content"><h2 id="deleteTitle" data-i18n="saved.deleteTitle">Delete this text?</h2><p id="deleteDescription" data-i18n="saved.deleteHint">This permanently removes the saved text. This action cannot be undone.</p><div class="modal-actions"><button type="button" id="cancelDelete" class="button secondary" data-i18n="common.cancel">Cancel</button><button type="button" id="confirmDelete" class="button danger" data-i18n="common.delete">Delete</button></div></div>
+</div>
     </div>
-
-    <script src="auth.js"></script>
-    <script src="transcriptions.js"></script>
+    <script src="auth.js"></script><script src="transcriptions.js"></script>
 </body>
-
 </html>

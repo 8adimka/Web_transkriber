@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Transcriber Full-stack"
+  short_description: "Доработка FastAPI, JavaScript и потокового аудио"
+  default_prompt: "Используй $transcriber-fullstack для доработки проекта: изучи затронутый сценарий, внеси согласованные изменения и проверь результат."

@@ -43,34 +43,34 @@ async def get_user_settings(
     Получить настройки пользователя.
     Сначала проверяем Redis, если нет - берем из PostgreSQL.
     """
-    # Пробуем получить из Redis
+    # Older cached snapshots do not contain UI preferences. Rebuild incomplete
+    # snapshots from PostgreSQL rather than silently overriding saved choices.
     redis_store = get_settings_store()
-    redis_settings = await redis_store.get_settings(current_user_id)
-
-    if redis_settings:
-        # Удаляем метаданные
-        clean_settings = {
-            k: v for k, v in redis_settings.items() if not k.startswith("_")
-        }
+    try:
+        redis_settings = await redis_store.get_settings(current_user_id)
+    except Exception:
+        redis_settings = None
+    required = {
+        "microphone_enabled", "tab_audio_enabled", "original_language",
+        "translation_language", "ui_language", "theme", "avatar_url",
+    }
+    if redis_settings and required.issubset(redis_settings):
         return {
             "user_id": current_user_id,
             "source": "redis",
-            "settings": clean_settings,
+            "settings": {
+                key: value for key, value in redis_settings.items()
+                if not key.startswith("_")
+            },
         }
 
-    # Если нет в Redis, берем из PostgreSQL
     settings = crud.get_user_settings(db, current_user_id)
+    snapshot = crud.user_settings_dict(settings)
+    await redis_store.set_settings(current_user_id, snapshot)
     return {
         "user_id": current_user_id,
         "source": "postgresql",
-        "settings": {
-            "microphone_enabled": settings.microphone_enabled,
-            "tab_audio_enabled": settings.tab_audio_enabled,
-            "original_language": settings.original_language,
-            "translation_language": settings.translation_language,
-            "avatar_url": settings.avatar_url,
-            "updated_at": settings.updated_at,
-        },
+        "settings": snapshot,
     }
 
 
@@ -84,8 +84,8 @@ async def update_user_settings(
     Обновить настройки пользователя.
     Сохраняем в Redis (оперативные данные) и PostgreSQL (постоянное хранилище).
     """
-    # Преобразуем Pydantic модель в словарь, исключая None значения
-    update_dict = settings_update.dict(exclude_unset=True)
+    # Only submitted fields change; omitted UI preferences keep their saved values.
+    update_dict = settings_update.model_dump(exclude_unset=True)
 
     # Проверяем, что есть что обновлять
     if not update_dict:
@@ -96,20 +96,14 @@ async def update_user_settings(
 
     # 2. Сохраняем в Redis (оперативные данные)
     redis_store = get_settings_store()
-    await redis_store.update_settings(current_user_id, update_dict)
+    snapshot = crud.user_settings_dict(updated_settings)
+    cached = await redis_store.set_settings(current_user_id, snapshot)
 
     return {
         "user_id": current_user_id,
         "updated": True,
-        "source": "both",
-        "settings": {
-            "microphone_enabled": updated_settings.microphone_enabled,
-            "tab_audio_enabled": updated_settings.tab_audio_enabled,
-            "original_language": updated_settings.original_language,
-            "translation_language": updated_settings.translation_language,
-            "avatar_url": updated_settings.avatar_url,
-            "updated_at": updated_settings.updated_at,
-        },
+        "source": "both" if cached else "postgresql",
+        "settings": snapshot,
     }
 
 
@@ -187,13 +181,7 @@ async def sync_settings_to_redis(
     settings = crud.get_user_settings(db, current_user_id)
 
     # Подготавливаем данные для Redis
-    redis_data = {
-        "microphone_enabled": settings.microphone_enabled,
-        "tab_audio_enabled": settings.tab_audio_enabled,
-        "original_language": settings.original_language,
-        "translation_language": settings.translation_language,
-        "avatar_url": settings.avatar_url,
-    }
+    redis_data = crud.user_settings_dict(settings)
 
     # Сохраняем в Redis
     redis_store = get_settings_store()

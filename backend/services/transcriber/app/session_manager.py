@@ -21,6 +21,7 @@ class Session:
         self.active = True
         self.mode = "transcription"
         self.stopped = False
+        self.stop_lock = asyncio.Lock()
 
     def append_transcript(self, text: str, speaker: str = ""):
         self.transcript_log.append(text)
@@ -29,52 +30,50 @@ class Session:
     def append_translation(self, text: str):
         self.translation_log.append(text)
 
+    def build_content(self) -> str:
+        """Only finalized segments are persisted; interim updates remain transient."""
+        if self.mode == "translation":
+            return "TRANSLATION\n\n" + "\n\n".join(self.translation_log) if self.translation_log else ""
+        if not self.transcript_log:
+            return ""
+        if isinstance(self.processor, UniversalProcessor):
+            content = self.processor.get_dialog_text()
+        else:
+            content = "\n\n".join(
+                f"{'Я' if speaker == 'me' else 'Собеседник'}: {text}"
+                for text, speaker in zip(self.transcript_log, self.speaker_log)
+            )
+        return "ТРАНСКРИПЦИЯ\n\n" + content
+
     async def save_to_db(
         self, language: str = "RU", translate_to: Optional[str] = None
     ) -> Optional[int]:
-        """Сохраняет транскрипцию в БД и возвращает ID записи"""
-        if self.mode != "transcription":
-            return None  # Для перевода не сохраняем в БД
-        if not self.transcript_log:
-            return None  # Не сохраняем пустую транскрипцию
+        """Persist transcription or translation after provider finalization."""
+        content = self.build_content()
+        if not content:
+            return None
+        if not self.user_id:
+            raise ValueError("Cannot save text without an authenticated owner")
 
-        try:
-            # Получаем текст транскрипции
-            content = "ТРАНСКРИПЦИЯ\n\n"
-            if self.processor and isinstance(self.processor, UniversalProcessor):
-                content += self.processor.get_dialog_text()
-            else:
-                # Старый способ (без времени)
-                for t, s in zip(self.transcript_log, self.speaker_log):
-                    sp = "Я" if s == "me" else "Собеседник"
-                    content += f"{sp}: {t}\n\n"
-
-            # Сохраняем в БД (синхронно, но в отдельном потоке)
+        def persist():
             from .crud import create_transcription
             from .database import SessionLocal
 
             db = SessionLocal()
             try:
-                transcription = create_transcription(
-                    db=db,
-                    user_id=int(self.user_id) if self.user_id else 0,
-                    filename=self.filename,
-                    content=content,
-                    orig_language=language,
-                    translate_to=translate_to,
-                    file_size=len(content.encode("utf-8")),
+                record = create_transcription(
+                    db=db, user_id=int(self.user_id), filename=self.filename,
+                    content=content, orig_language=language,
+                    translate_to=translate_to, file_size=len(content.encode("utf-8")),
                 )
-                logger = logging.getLogger("Session")
-                transcription_id = transcription.id  # Получаем значение ID
-                logger.info(f"Транскрипция сохранена в БД: ID={transcription_id}")
-                return transcription_id
+                return record.id
+            except Exception:
+                db.rollback()
+                raise
             finally:
                 db.close()
 
-        except Exception as e:
-            logger = logging.getLogger("Session")
-            logger.error(f"Ошибка сохранения транскрипции в БД: {e}")
-            return None
+        return await asyncio.to_thread(persist)
 
 
 class SessionManager:
@@ -93,6 +92,8 @@ class SessionManager:
     async def start_worker(
         self, session: Session, mode: str = "transcription", **kwargs
     ):
+        if session.processor is not None or session.stopped:
+            raise ValueError("This recording session has already started")
         session.mode = mode
         # Преобразуем user_id в int, если он есть
         user_id_int = None
@@ -117,38 +118,54 @@ class SessionManager:
     async def stop_session(
         self, session: Session, language: str = "RU", translate_to: Optional[str] = None
     ):
-        if session.stopped:
-            return
-        session.stopped = True
-        session.active = False
+        async with session.stop_lock:
+            if session.stopped:
+                return
+            session.stopped = True
+            session.active = False
+            incomplete = False
+            if session.processor_task:
+                try:
+                    await asyncio.wait_for(asyncio.shield(session.processor_task), timeout=10)
+                except Exception:
+                    incomplete = True
+                    session.processor_task.cancel()
+                    await asyncio.gather(session.processor_task, return_exceptions=True)
+            if session.processor:
+                try:
+                    await session.processor.stop()
+                    incomplete = incomplete or session.processor.stop_incomplete
+                except Exception:
+                    incomplete = True
 
-        logger = logging.getLogger("SessionManager")
-        logger.info(f"Остановка сессии {session.filename}")
+            has_text = bool(session.translation_log if session.mode == "translation"
+                            else session.transcript_log)
+            transcription_id = None
+            try:
+                transcription_id = await session.save_to_db(
+                    language=language, translate_to=translate_to
+                )
+            except Exception:
+                logging.getLogger("SessionManager").warning("Could not save finalized text")
+                try:
+                    await session.websocket.send_json({
+                        "type": "error", "code": "save_failed",
+                        "message": "The text could not be saved. Download a local copy before leaving.",
+                    })
+                except Exception:
+                    pass
 
-        if session.processor:
-            await session.processor.stop()
-        if session.processor_task:
-            session.processor_task.cancel()
-
-        # Сохраняем в БД вместо файла
-        transcription_id = await session.save_to_db(
-            language=language, translate_to=translate_to
-        )
-        msg = {"type": "done", "message": "Готово"}
-        if transcription_id:
-            msg["transcription_id"] = str(transcription_id)
-            # Формируем URL для скачивания с токеном
-            # Токен будет добавлен фронтендом при скачивании
-            msg["download_url"] = f"/transcriptions/{transcription_id}/download"
-            logger.info(f"Транскрипция сохранена в БД: ID={transcription_id}")
-        else:
-            logger.info("Транскрипция не сохранена (режим перевода или ошибка)")
-
-        try:
-            await session.websocket.send_json(msg)
-            logger.info("Сообщение 'done' отправлено клиенту")
-        except Exception as e:
-            logger.error(f"Не удалось отправить сообщение 'done': {e}")
+            msg = {
+                "type": "done", "message": "Done", "saved": transcription_id is not None,
+                "empty": not has_text, "incomplete": incomplete,
+            }
+            if transcription_id is not None:
+                msg["transcription_id"] = str(transcription_id)
+                msg["download_url"] = f"/transcriptions/{transcription_id}/download"
+            try:
+                await session.websocket.send_json(msg)
+            except Exception:
+                logging.getLogger("SessionManager").debug("Client disconnected before completion")
 
     async def handle_audio_chunk(self, session: Session, data: bytes):
         if len(data) < 2:
@@ -157,4 +174,6 @@ class SessionManager:
         webm = data[1:]
 
         if session.processor and session.active:
+            if session.processor_task:
+                await session.processor_task
             await session.processor.process_chunk(source, webm)

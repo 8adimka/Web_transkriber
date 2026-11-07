@@ -26,29 +26,34 @@ logger = logging.getLogger(__name__)
 
 
 def render_error_html(message: str, status_code: int = 400) -> HTMLResponse:
-    """Возвращает HTML страницу с сообщением об ошибке и автоматическим редиректом на логин."""
-    html_content = f"""
+    """Use the shared localized interface without embedding OAuth exception data."""
+    html_content = """
     <!DOCTYPE html>
-    <html>
+    <html lang="en" data-theme="dark">
     <head>
-        <title>Authentication Error</title>
-        <style>
-            body {{ font-family: sans-serif; text-align: center; padding: 2rem; }}
-            .error {{ color: #d32f2f; background: #ffebee; padding: 1rem; border-radius: 4px; }}
-            .info {{ margin-top: 1rem; color: #666; }}
-        </style>
-        <script>
-            // Автоматический редирект на страницу логина через 5 секунд
-            setTimeout(() => {{
-                window.location.href = '/login.html';
-            }}, 5000);
-        </script>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title data-i18n="auth.googleErrorTitle">Google sign-in failed</title>
+        <script src="/ui.js"></script>
+        <link rel="stylesheet" href="/styles.css">
     </head>
     <body>
-        <h2>Authentication Error</h2>
-        <div class="error">{message}</div>
-        <p class="info">You will be redirected to the login page in 5 seconds.</p>
-        <p><a href="/login.html">Click here to go back now</a></p>
+        <main class="container auth-container">
+            <header class="app-header">
+                <a class="nav-link" href="/login.html" data-i18n="nav.login">Log in</a>
+                <label class="theme-toggle">
+                    <span data-i18n="theme.label">Dark mode</span>
+                    <span class="theme-switch">
+                        <input type="checkbox" role="switch" data-theme-toggle checked
+                            data-i18n-aria-label="theme.label" aria-label="Dark mode">
+                        <span class="switch-track" aria-hidden="true"></span>
+                    </span>
+                </label>
+            </header>
+            <h1 data-i18n="auth.googleErrorTitle">Google sign-in failed</h1>
+            <p role="alert" data-i18n="auth.googleErrorHint">Please try signing in again.</p>
+            <a class="button primary" href="/login.html" data-i18n="nav.login">Log in</a>
+        </main>
     </body>
     </html>
     """

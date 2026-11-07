@@ -111,6 +111,8 @@ class UserSettings(Base):
     tab_audio_enabled = Column(Boolean, default=True)
     original_language = Column(String(10), default="RU")
     translation_language = Column(String(10), default="EN")
+    ui_language = Column(String(2), nullable=False, default="en", server_default="en")
+    theme = Column(String(5), nullable=False, default="dark", server_default="dark")
     avatar_url = Column(Text, nullable=True)
     created_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False

@@ -1,297 +1,53 @@
 <!DOCTYPE html>
-<html lang="ru">
-
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Профиль пользователя - Web Transcriber</title>
+    <title data-i18n="profile.title">Profile & preferences</title>
+    <script src="ui.js"></script>
     <link rel="stylesheet" href="styles.css">
-    <style>
-        .profile-container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .profile-header {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .avatar {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 3px solid #4CAF50;
-        }
-
-        .user-info h2 {
-            margin: 0 0 5px 0;
-            color: #333;
-        }
-
-        .user-info p {
-            margin: 0;
-            color: #666;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            border-left: 4px solid #4CAF50;
-        }
-
-        .stat-card h3 {
-            margin: 0 0 10px 0;
-            color: #333;
-            font-size: 16px;
-        }
-
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #4CAF50;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .settings-section {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 25px;
-            margin-bottom: 30px;
-        }
-
-        .settings-section h3 {
-            margin: 0 0 20px 0;
-            color: #333;
-        }
-
-        .settings-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-        }
-
-        .setting-item {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .setting-item label {
-            font-weight: 500;
-            color: #555;
-        }
-
-        .setting-item select,
-        .setting-item input[type="checkbox"] {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .back-link {
-            display: inline-block;
-            margin-top: 20px;
-            color: #4CAF50;
-            text-decoration: none;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
-
-        .edit-profile-btn {
-            margin-left: 10px;
-            padding: 4px 12px;
-            font-size: 14px;
-        }
-
-        .profile-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .nav-buttons-column {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: flex-end;
-        }
-
-        .nav-buttons-column .button {
-            width: 150px;
-            text-align: center;
-        }
-    </style>
 </head>
-
 <body>
     <div class="container">
-        <header>
-            <div class="header-top">
-                <div>
-                    <h1>👤 Профиль пользователя</h1>
-                    <p>Управление настройками и просмотр статистики</p>
-                </div>
-                <div id="authSection" class="auth-section">
-                    <div id="userInfo" style="display: none;" class="nav-buttons-column">
-                        <span id="userName"></span>
-                        <a href="index.html" class="button small">🏠 Главная</a>
-                        <a href="transcriptions.html" class="button small">📝 Мои транскрипции</a>
-                        <button id="logoutBtn" class="button small">Выйти</button>
-                    </div>
-                    <div id="loginPrompt">
-                        <a href="login.html" class="button small">Войти</a>
-                        <a href="register.html" class="button small secondary">Регистрация</a>
-                    </div>
-                </div>
-            </div>
-        </header>
+        <header class="app-header"><nav class="workspace-nav" aria-label="Main navigation" data-i18n-aria-label="nav.main"><a href="index.html" data-i18n="nav.workspace">Workspace</a><a href="transcriptions.html" data-i18n="nav.saved">Saved texts</a><a href="profile.html" aria-current="page" data-i18n="nav.profile">Profile</a></nav><div class="header-actions"><label class="interface-language"><span class="sr-only" data-i18n="common.interfaceLanguage">Interface language</span><select data-ui-language aria-label="Interface language" data-i18n-aria-label="common.interfaceLanguage"><option value="en">English</option><option value="ru">Русский</option></select></label><label class="theme-toggle"><span data-i18n="theme.label">Dark mode</span><span class="theme-switch"><input type="checkbox" role="switch" data-theme-toggle data-i18n-aria-label="common.themeToggle" aria-label="Switch dark mode" checked><span class="switch-track" aria-hidden="true"></span></span></label><div id="authSection" class="auth-section"><div id="userInfo" class="user-info-header" style="display:none;"><span id="userName" class="user-email"></span><button type="button" id="logoutBtn" class="button small secondary" data-i18n="nav.logout">Log out</button></div><div id="loginPrompt"><a href="login.html" data-i18n="nav.login">Log in</a></div></div></div></header>
 
-        <div class="profile-container">
-            <div id="loading" class="loading">
-                <p>Загрузка профиля...</p>
-            </div>
-
-            <div id="error" class="error" style="display: none;"></div>
-
-            <div id="profileContent" style="display: none;">
-                <!-- Профиль пользователя -->
-                <div class="profile-header">
-                    <img id="userAvatar" src="" alt="Аватар" class="avatar"
-                        onerror="this.src='https://via.placeholder.com/100'">
-                    <div class="user-info">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <h2 id="userFullName">Загрузка...</h2>
-                            <button id="editProfileBtn" class="button small edit-profile-btn">✏️ Редактировать</button>
-                        </div>
-                        <p id="userEmail">Загрузка...</p>
-                        <p id="userSince">Зарегистрирован: Загрузка...</p>
-                    </div>
-                </div>
-
-                <!-- Статистика токенов -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>DeepGram (аудио)</h3>
-                        <div class="stat-value" id="deepgramSeconds">0.0</div>
-                        <div class="stat-label">секунд транскрибировано</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>DeepL (перевод)</h3>
-                        <div class="stat-value" id="deeplCharacters">0</div>
-                        <div class="stat-label">символов переведено</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Всего запросов</h3>
-                        <div class="stat-value" id="totalRequests">0</div>
-                        <div class="stat-label">запросов к API</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Период</h3>
-                        <div class="stat-value" id="statsYear">2026</div>
-                        <div class="stat-label">текущий год</div>
-                    </div>
-                </div>
-
-                <!-- Настройки пользователя -->
-                <div class="settings-section">
-                    <h3>Настройки аудио</h3>
-                    <div class="settings-grid">
-                        <div class="setting-item">
-                            <label>
-                                <input type="checkbox" id="microphoneEnabled">
-                                Микрофон включен
-                            </label>
-                        </div>
-                        <div class="setting-item">
-                            <label>
-                                <input type="checkbox" id="tabAudioEnabled">
-                                Звук с вкладки/окна включен
-                            </label>
-                        </div>
-                        <div class="setting-item">
-                            <label>Язык оригинала:</label>
-                            <select id="originalLanguage">
-                                <option value="RU">Русский</option>
-                                <option value="EN">Английский</option>
-                                <option value="ES">Испанский</option>
-                                <option value="DE">Немецкий</option>
-                                <option value="FR">Французский</option>
-                            </select>
-                        </div>
-                        <div class="setting-item">
-                            <label>Язык перевода:</label>
-                            <select id="translationLanguage">
-                                <option value="RU">Русский</option>
-                                <option value="EN">Английский</option>
-                                <option value="ES">Испанский</option>
-                                <option value="DE">Немецкий</option>
-                                <option value="FR">Французский</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="actions">
-                        <button id="saveSettingsBtn" class="button primary">Сохранить настройки</button>
-                        <button id="resetSettingsBtn" class="button secondary">Сбросить к умолчаниям</button>
-                    </div>
-                </div>
-
-                <!-- Дополнительная информация -->
-                <div class="settings-section">
-                    <h3>Дополнительная информация</h3>
-                    <p>Настройки автоматически сохраняются и применяются на главной странице.</p>
-                    <p>Для просмотра детальной истории использования токенов используйте API эндпоинты.</p>
-                </div>
-
-                <a href="index.html" class="back-link">← Вернуться на главную</a>
-            </div>
+<main class="profile-container">
+    <div class="page-heading"><h1 data-i18n="profile.title">Profile & preferences</h1><p data-i18n="profile.subtitle">Your account, audio defaults and workspace preferences.</p></div>
+    <div id="loading" class="loading" role="status" data-i18n="profile.loading">Loading your profile…</div>
+    <div id="error" class="error" role="alert" style="display:none;"></div>
+    <div id="settingsStatus" class="status-bar" role="status"></div>
+    <div id="profileContent" style="display:none;">
+        <section class="profile-header" aria-label="Account" data-i18n-aria-label="profile.accountLabel">
+            <img id="userAvatar" src="avatar-placeholder.svg" alt="Avatar" data-i18n-alt="common.avatar" class="avatar">
+            <div class="user-info"><h2 id="userFullName"></h2><p id="userEmail"></p><p id="userSince"></p></div>
+            <button type="button" id="editProfileBtn" class="button secondary" data-i18n="profile.edit">Edit profile</button>
+        </section>
+        <div class="stats-grid">
+            <div class="stat-card"><h3 data-i18n="profile.audioUsage">Audio processed</h3><div class="stat-value" id="deepgramSeconds">0.0</div><span class="stat-label" data-i18n="profile.seconds">seconds transcribed</span></div>
+            <div class="stat-card"><h3 data-i18n="profile.translationUsage">Translation</h3><div class="stat-value" id="deeplCharacters">0</div><span class="stat-label" data-i18n="profile.characters">characters translated</span></div>
+            <div class="stat-card"><h3 data-i18n="profile.requests">API requests</h3><div class="stat-value" id="totalRequests">0</div><span class="stat-label" data-i18n="profile.totalRequests">requests in total</span></div>
+            <div class="stat-card"><h3 data-i18n="profile.period">Usage period</h3><div class="stat-value" id="statsYear">—</div><span class="stat-label" data-i18n="profile.currentYear">current year</span></div>
         </div>
+        <section class="settings-section">
+            <h2 data-i18n="profile.appearance">Interface</h2><p class="section-description" data-i18n="profile.appearanceHint">Language and appearance apply immediately across the app.</p>
+            <div class="settings-grid preferences-grid">
+                <div class="setting-item"><label for="interfaceLanguage" data-i18n="common.interfaceLanguage">Interface language</label><select id="interfaceLanguage" data-ui-language><option value="en">English</option><option value="ru">Русский</option></select></div>
+                <div class="setting-item"><label class="theme-toggle"><span data-i18n="theme.label">Dark mode</span><span class="theme-switch"><input type="checkbox" role="switch" id="profileThemeToggle" data-theme-toggle data-i18n-aria-label="common.themeToggle" aria-label="Switch dark mode" checked><span class="switch-track" aria-hidden="true"></span></span></label></div>
+            </div>
+        </section>
+        <section class="settings-section">
+            <h2 data-i18n="profile.audio">Audio defaults</h2>
+            <div class="settings-grid">
+                <div class="setting-item"><label class="audio-toggle"><input type="checkbox" id="microphoneEnabled"><span data-i18n="profile.enableMic">Enable microphone</span></label></div>
+                <div class="setting-item"><label class="audio-toggle"><input type="checkbox" id="tabAudioEnabled"><span data-i18n="profile.enableTab">Enable system / tab audio</span></label></div>
+                <div class="setting-item"><label for="originalLanguage" data-i18n="language.source">Source language</label><select id="originalLanguage"><option value="RU" data-i18n="language.ru">Russian</option><option value="EN" data-i18n="language.en">English</option><option value="ES" data-i18n="language.es">Spanish</option><option value="DE" data-i18n="language.de">German</option><option value="FR" data-i18n="language.fr">French</option></select></div>
+                <div class="setting-item"><label for="translationLanguage" data-i18n="language.target">Translate to</label><select id="translationLanguage"><option value="RU" data-i18n="language.ru">Russian</option><option value="EN" data-i18n="language.en">English</option><option value="ES" data-i18n="language.es">Spanish</option><option value="DE" data-i18n="language.de">German</option><option value="FR" data-i18n="language.fr">French</option></select></div>
+            </div>
+        </section>
+        <div class="actions"><button type="button" id="saveSettingsBtn" class="button primary" data-i18n="profile.save">Save settings</button><button type="button" id="resetSettingsBtn" class="button secondary" data-i18n="profile.reset">Restore defaults</button></div>
     </div>
-
-    <script src="auth.js"></script>
-    <script src="profile.js"></script>
+</main>
+    </div>
+    <script src="auth.js"></script><script src="profile.js"></script>
 </body>
-
 </html>

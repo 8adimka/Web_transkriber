@@ -1,309 +1,189 @@
-// Элементы DOM
-const transcriptionsList = document.getElementById('transcriptionsList');
-const transcriptionsInfo = document.getElementById('transcriptionsInfo');
-const pagination = document.getElementById('pagination');
-const deleteModal = document.getElementById('deleteModal');
-const cancelDeleteBtn = document.getElementById('cancelDelete');
-const confirmDeleteBtn = document.getElementById('confirmDelete');
-const logoutBtn = document.getElementById('logoutBtn');
+/* Saved transcripts and translations. All server content is rendered as text. */
+(function () {
+    'use strict';
+    const byId = id => document.getElementById(id);
+    const t = (key, variables) => window.UI.t(key, variables);
+    const itemsPerPage = 10;
+    let currentPage = 1;
+    let totalItems = 0;
+    let texts = [];
+    let selectedId = null;
+    let previousFocus = null;
+    let requestVersion = 0;
 
-// Состояние
-let currentPage = 1;
-const itemsPerPage = 10;
-let totalItems = 0;
-let transcriptions = [];
-let transcriptionToDelete = null;
-
-// Инициализация
-function init() {
-    checkAuth();
-    loadTranscriptions();
-    setupEventListeners();
-}
-
-// Проверка аутентификации
-function checkAuth() {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        alert('Для просмотра транскрипций необходимо войти в систему.');
-        window.location.href = 'login.html';
-        return false;
+    function node(tag, className, text) {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
     }
-    return true;
-}
-
-// Настройка обработчиков событий
-function setupEventListeners() {
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_info');
-            window.location.href = 'login.html';
+    async function tokenRequest(path, options = {}) {
+        function url() {
+            const parsed = new URL(path, window.location.origin);
+            parsed.searchParams.set('token', window.auth.getAccessToken());
+            return parsed.pathname + parsed.search;
+        }
+        let response = await fetch(url(), options);
+        if (response.status === 401) {
+            const renewed = await window.auth.refreshAccessToken();
+            if (!renewed) throw new Error('Session unavailable');
+            response = await fetch(url(), options);
+        }
+        if (response.status === 401) {
+            window.auth.logout();
+            throw new Error('Session unavailable');
+        }
+        return response;
+    }
+    function formatDate(value) {
+        return new Date(value).toLocaleString(window.UI.locale, {
+            year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
     }
-
-    if (cancelDeleteBtn) {
-        cancelDeleteBtn.addEventListener('click', () => {
-            deleteModal.style.display = 'none';
-            transcriptionToDelete = null;
-        });
+    function formatSize(value) {
+        const amount = Number(value) || 0;
+        const units = amount < 1024 ? [amount, 'bytes'] : amount < 1048576 ? [amount / 1024, 'kilobytes'] : [amount / 1048576, 'megabytes'];
+        return units[0].toLocaleString(window.UI.locale, { maximumFractionDigits: 1 }) + ' ' + t('saved.' + units[1]);
     }
-
-    if (confirmDeleteBtn) {
-        confirmDeleteBtn.addEventListener('click', deleteTranscription);
-    }
-}
-
-// Загрузка транскрипций
-async function loadTranscriptions(page = 1) {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        window.location.href = 'login.html';
-        return;
-    }
-
-    try {
-        const skip = (page - 1) * itemsPerPage;
-        // Пробуем оба варианта - со слешем и без
-        let url = `/transcriptions?skip=${skip}&limit=${itemsPerPage}&token=${encodeURIComponent(token)}`;
-        let response = await fetch(url, { redirect: 'follow' });
-
-        // Если получили редирект, пробуем без слеша
-        if (response.redirected) {
-            url = `/transcriptions?skip=${skip}&limit=${itemsPerPage}&token=${encodeURIComponent(token)}`;
-            response = await fetch(url, { redirect: 'follow' });
-        }
-
-        if (response.status === 401) {
-            alert('Сессия истекла. Пожалуйста, войдите снова.');
-            window.location.href = 'login.html';
+    function renderTexts() {
+        const list = byId('transcriptionsList');
+        list.replaceChildren();
+        if (!texts.length) {
+            const empty = node('div', 'empty-state');
+            empty.append(node('h2', '', t('saved.empty')), node('p', '', t('saved.emptyHint')));
+            const link = node('a', 'button secondary', t('saved.create'));
+            link.href = 'index.html';
+            empty.append(link);
+            list.append(empty);
             return;
         }
-
-        if (!response.ok) {
-            throw new Error(`Ошибка загрузки: ${response.status}`);
+        for (const text of texts) {
+            const article = node('article', 'transcription-item');
+            article.dataset.id = String(text.id);
+            const header = node('div', 'transcription-header');
+            const title = node('div', 'transcription-title');
+            title.append(node('h2', '', formatDate(text.created_at)));
+            const metadata = String(text.orig_language || '') + (text.translate_to ? ' → ' + String(text.translate_to) : '') + (text.file_size ? ' · ' + formatSize(text.file_size) : '');
+            title.append(node('span', 'transcription-meta', metadata));
+            const actions = node('div', 'transcription-actions');
+            const download = node('button', 'button small secondary', t('common.download'));
+            download.type = 'button';
+            download.addEventListener('click', () => downloadText(text.id, download));
+            const remove = node('button', 'button small danger', t('common.delete'));
+            remove.type = 'button';
+            remove.addEventListener('click', () => showDeleteModal(text.id));
+            actions.append(download, remove);
+            header.append(title, actions);
+            const content = String(text.content || '');
+            article.append(header, node('p', 'transcription-preview', content.length > 240 ? content.slice(0, 240) + '…' : content));
+            list.append(article);
         }
-
-        const data = await response.json();
-        transcriptions = data.transcriptions;
-        totalItems = data.total;
-        currentPage = page;
-
-        renderTranscriptions();
-        renderPagination();
-        updateInfo();
-    } catch (error) {
-        console.error('Ошибка загрузки транскрипций:', error);
-        transcriptionsList.innerHTML = `<div class="error">Ошибка загрузки транскрипций: ${error.message}</div>`;
     }
-}
-
-// Отображение транскрипций
-function renderTranscriptions() {
-    if (transcriptions.length === 0) {
-        transcriptionsList.innerHTML = `
-            <div class="empty-state">
-                <p>У вас пока нет сохранённых транскрипций.</p>
-                <p>Вернитесь на <a href="index.html">главную страницу</a>, чтобы создать первую транскрипцию.</p>
-            </div>
-        `;
-        return;
+    function renderPagination() {
+        const pagination = byId('pagination');
+        pagination.replaceChildren();
+        if (totalItems <= itemsPerPage) return;
+        const pages = Math.ceil(totalItems / itemsPerPage);
+        const controls = node('div', 'pagination-controls');
+        const previous = node('button', 'button small secondary', t('saved.previous'));
+        previous.type = 'button'; previous.disabled = currentPage === 1;
+        previous.addEventListener('click', () => loadTexts(currentPage - 1));
+        const next = node('button', 'button small secondary', t('saved.next'));
+        next.type = 'button'; next.disabled = currentPage === pages;
+        next.addEventListener('click', () => loadTexts(currentPage + 1));
+        controls.append(previous, node('span', 'page-info', t('saved.page', { page: currentPage, pages })), next);
+        pagination.append(controls);
     }
-
-    const html = transcriptions.map(transcription => `
-        <div class="transcription-item" data-id="${transcription.id}">
-            <div class="transcription-header">
-                <div class="transcription-title">
-                    <h3>${formatDate(transcription.created_at)}</h3>
-                    <span class="transcription-meta">
-                        ${transcription.orig_language}${transcription.translate_to ? ` → ${transcription.translate_to}` : ''}
-                        ${transcription.file_size ? ` • ${formatFileSize(transcription.file_size)}` : ''}
-                    </span>
-                </div>
-                <div class="transcription-actions">
-                    <button class="button small" onclick="downloadTranscription(${transcription.id})">
-                        📥 Скачать
-                    </button>
-                    <button class="button small danger" onclick="showDeleteModal(${transcription.id})">
-                        🗑️ Удалить
-                    </button>
-                </div>
-            </div>
-            <div class="transcription-preview">
-                ${truncateText(transcription.content, 200)}
-            </div>
-        </div>
-    `).join('');
-
-    transcriptionsList.innerHTML = html;
-}
-
-// Отображение пагинации
-function renderPagination() {
-    if (totalItems <= itemsPerPage) {
-        pagination.innerHTML = '';
-        return;
+    function updateInfo() {
+        delete byId('transcriptionsInfo').dataset.i18n;
+        byId('transcriptionsInfo').textContent = totalItems
+            ? t('saved.count', { start: (currentPage - 1) * itemsPerPage + 1, end: Math.min(currentPage * itemsPerPage, totalItems), total: totalItems })
+            : t('saved.none');
     }
-
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    let html = '<div class="pagination-controls">';
-
-    if (currentPage > 1) {
-        html += `<button class="button small" onclick="loadTranscriptions(${currentPage - 1})">← Назад</button>`;
+    function render() { renderTexts(); renderPagination(); updateInfo(); }
+    function showError(key) {
+        const error = node('div', 'error', t(key));
+        error.setAttribute('role', 'alert');
+        error.dataset.i18n = key;
+        byId('transcriptionsList').replaceChildren(error);
     }
-
-    html += `<span class="page-info">Страница ${currentPage} из ${totalPages}</span>`;
-
-    if (currentPage < totalPages) {
-        html += `<button class="button small" onclick="loadTranscriptions(${currentPage + 1})">Вперёд →</button>`;
-    }
-
-    html += '</div>';
-    pagination.innerHTML = html;
-}
-
-// Обновление информации
-function updateInfo() {
-    const start = (currentPage - 1) * itemsPerPage + 1;
-    const end = Math.min(currentPage * itemsPerPage, totalItems);
-
-    if (totalItems === 0) {
-        transcriptionsInfo.textContent = 'Нет транскрипций';
-    } else {
-        transcriptionsInfo.textContent = `Показано ${start}-${end} из ${totalItems} транскрипций`;
-    }
-}
-
-// Скачивание транскрипции
-async function downloadTranscription(id) {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        window.location.href = 'login.html';
-        return;
-    }
-
-    try {
-        const response = await fetch(`/transcriptions/${id}/download?token=${encodeURIComponent(token)}`);
-
-        if (response.status === 401) {
-            alert('Сессия истекла. Пожалуйста, войдите снова.');
-            window.location.href = 'login.html';
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error(`Ошибка скачивания: ${response.status}`);
-        }
-
-        // Получаем имя файла из заголовков
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = `transcription_${id}.txt`;
-        if (contentDisposition) {
-            // Пробуем разные форматы заголовка Content-Disposition
-            let match = contentDisposition.match(/filename="(.+?)"/);  // С кавычками
-            if (!match) {
-                match = contentDisposition.match(/filename=([^;]+)/);  // Без кавычек
+    async function loadTexts(page = 1) {
+        const version = ++requestVersion;
+        byId('transcriptionsList').setAttribute('aria-busy', 'true');
+        try {
+            const response = await tokenRequest('/transcriptions?skip=' + ((page - 1) * itemsPerPage) + '&limit=' + itemsPerPage);
+            if (!response.ok) throw new Error('Texts unavailable');
+            const data = await response.json();
+            if (version !== requestVersion) return;
+            texts = data.transcriptions;
+            totalItems = Number(data.total);
+            currentPage = page;
+            if (currentPage > 1 && !texts.length && totalItems) {
+                await loadTexts(Math.ceil(totalItems / itemsPerPage));
+                return;
             }
-            if (match) {
-                filename = match[1].trim();
-                // Убираем кавычки, если они есть
-                if (filename.startsWith('"') && filename.endsWith('"')) {
-                    filename = filename.slice(1, -1);
-                }
+            if (!totalItems) currentPage = 1;
+            render();
+        } catch (_) { if (version === requestVersion) showError('saved.loadError'); }
+        finally { if (version === requestVersion) byId('transcriptionsList').setAttribute('aria-busy', 'false'); }
+    }
+    async function downloadText(id, button) {
+        button.disabled = true;
+        try {
+            const response = await tokenRequest('/transcriptions/' + encodeURIComponent(id) + '/download');
+            if (!response.ok) throw new Error('Download unavailable');
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="([^"]+)"/) || disposition.match(/filename=([^;]+)/);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = node('a');
+            link.href = url;
+            link.download = match ? match[1].trim() : 'text_' + id + '.txt';
+            document.body.append(link);
+            link.click(); link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (_) { alert(t('saved.downloadError')); }
+        finally { button.disabled = false; }
+    }
+    function closeDeleteModal() {
+        byId('deleteModal').style.display = 'none';
+        selectedId = null;
+        previousFocus?.focus();
+    }
+    function showDeleteModal(id) {
+        selectedId = id;
+        previousFocus = document.activeElement;
+        byId('deleteModal').style.display = 'flex';
+        byId('cancelDelete').focus();
+    }
+    async function deleteText() {
+        if (selectedId === null) return;
+        byId('confirmDelete').disabled = true;
+        try {
+            const response = await tokenRequest('/transcriptions/' + encodeURIComponent(selectedId), { method: 'DELETE' });
+            if (!response.ok) throw new Error('Delete unavailable');
+            closeDeleteModal();
+            await loadTexts(currentPage);
+        } catch (_) { alert(t('saved.deleteError')); }
+        finally { byId('confirmDelete').disabled = false; }
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        if (!window.auth.isAuthenticated()) { window.location.href = 'login.html'; return; }
+        byId('cancelDelete').addEventListener('click', closeDeleteModal);
+        byId('confirmDelete').addEventListener('click', deleteText);
+        byId('deleteModal').addEventListener('click', event => { if (event.target === byId('deleteModal')) closeDeleteModal(); });
+        byId('deleteModal').addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); closeDeleteModal(); }
+            if (event.key === 'Tab') {
+                const first = byId('cancelDelete'); const last = byId('confirmDelete');
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
             }
-        }
-
-        // Создаем blob и скачиваем
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    } catch (error) {
-        console.error('Ошибка скачивания:', error);
-        alert(`Ошибка скачивания: ${error.message}`);
-    }
-}
-
-// Показать модальное окно удаления
-function showDeleteModal(id) {
-    transcriptionToDelete = id;
-    deleteModal.style.display = 'flex';
-}
-
-// Удаление транскрипции
-async function deleteTranscription() {
-    if (!transcriptionToDelete) return;
-
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        window.location.href = 'login.html';
-        return;
-    }
-
-    try {
-        const response = await fetch(`/transcriptions/${transcriptionToDelete}?token=${encodeURIComponent(token)}`, {
-            method: 'DELETE'
         });
-
-        if (response.status === 401) {
-            alert('Сессия истекла. Пожалуйста, войдите снова.');
-            window.location.href = 'login.html';
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error(`Ошибка удаления: ${response.status}`);
-        }
-
-        // Закрываем модальное окно и обновляем список
-        deleteModal.style.display = 'none';
-        transcriptionToDelete = null;
-
-        // Перезагружаем текущую страницу
-        loadTranscriptions(currentPage);
-
-        // Не показываем дополнительное окно подтверждения
-        // Просто обновляем список (уже сделано выше)
-    } catch (error) {
-        console.error('Ошибка удаления:', error);
-        // Не показываем alert при ошибке, можно добавить уведомление в интерфейсе
-        // alert(`Ошибка удаления: ${error.message}`);
-    }
-}
-
-// Вспомогательные функции
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleString('ru-RU', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        loadTexts();
     });
-}
-
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' Б';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
-}
-
-function truncateText(text, maxLength) {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-}
-
-// Глобальные функции для использования в HTML
-window.downloadTranscription = downloadTranscription;
-window.showDeleteModal = showDeleteModal;
-window.loadTranscriptions = loadTranscriptions;
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('ui:change', () => {
+        // Keep existing error/loading state while updating already loaded content.
+        if (byId('transcriptionsList').querySelector('.transcription-item, .empty-state')) render();
+    });
+})();

@@ -5,7 +5,25 @@ const USER_INFO_KEY = 'user_info';
 const USER_SETTINGS_KEY = 'user_settings';
 
 // Базовый URL для API запросов
-const API_BASE_URL = window.location.protocol === 'https:' ? 'https://localhost' : 'http://localhost:8000';
+const API_BASE_URL = ''; // Use the same HTTPS origin and Nginx routes on every host.
+const authText = (key, values = {}) => window.UI.t(key, values);
+let authStatusMessage = null;
+
+function setAuthStatus(key, values = {}, state = '') {
+    authStatusMessage = { key, values, state };
+    const element = document.getElementById('authStatus');
+    if (element) {
+        element.textContent = authText(key, values);
+        element.className = `status-bar ${state}`;
+    }
+}
+
+document.addEventListener('ui:change', () => {
+    if (authStatusMessage) {
+        const { key, values, state } = authStatusMessage;
+        setAuthStatus(key, values, state);
+    }
+});
 
 // Сохранение токенов
 function saveTokens(accessToken, refreshToken, userInfo) {
@@ -43,7 +61,7 @@ function logout() {
 }
 
 // Обновление токена
-async function refreshAccessToken() {
+async function performTokenRefresh() {
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
         logout();
@@ -77,6 +95,15 @@ async function refreshAccessToken() {
         logout();
         return null;
     }
+}
+
+// Share a refresh request when profile, preferences and audio settings load together.
+let refreshRequest = null;
+function refreshAccessToken() {
+    if (!refreshRequest) {
+        refreshRequest = performTokenRefresh().finally(() => { refreshRequest = null; });
+    }
+    return refreshRequest;
 }
 
 // Запрос с автоматическим обновлением токена
@@ -127,11 +154,12 @@ function updateUserUI() {
             if (avatarUrl) {
                 userAvatarSmall.src = avatarUrl;
                 userAvatarSmall.onerror = function () {
-                    console.warn('Не удалось загрузить аватар:', avatarUrl);
-                    this.src = 'https://via.placeholder.com/40';
+                    console.warn('Avatar could not be loaded');
+                    this.onerror = null;
+                    this.src = 'avatar-placeholder.svg';
                 };
             } else {
-                userAvatarSmall.src = 'https://via.placeholder.com/40';
+                userAvatarSmall.src = 'avatar-placeholder.svg';
             }
         }
 
@@ -153,19 +181,17 @@ function updateUserUI() {
 
 // Загрузка настроек пользователя
 async function loadUserSettings() {
+    const preferenceRevision = window.UI.preferenceRevision;
     const token = getAccessToken();
     if (!token) return null;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/user/settings`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await authFetch(`${API_BASE_URL}/user/settings`);
 
-        if (response.ok) {
+        if (response && response.ok) {
             const data = await response.json();
             localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(data.settings));
+            window.UI.applyPreferences(data.settings, preferenceRevision);
             return data.settings;
         }
     } catch (error) {
@@ -192,10 +218,10 @@ function applyUserSettings() {
     const sourceLangSelect = document.getElementById('sourceLang');
     const targetLangSelect = document.getElementById('targetLang');
 
-    if (useMicCheckbox) useMicCheckbox.checked = settings.microphone_enabled;
-    if (useSystemCheckbox) useSystemCheckbox.checked = settings.tab_audio_enabled;
-    if (sourceLangSelect) sourceLangSelect.value = settings.original_language;
-    if (targetLangSelect) targetLangSelect.value = settings.translation_language;
+    if (useMicCheckbox && !useMicCheckbox.disabled) useMicCheckbox.checked = settings.microphone_enabled;
+    if (useSystemCheckbox && !useSystemCheckbox.disabled) useSystemCheckbox.checked = settings.tab_audio_enabled;
+    if (sourceLangSelect && !sourceLangSelect.disabled) sourceLangSelect.value = settings.original_language;
+    if (targetLangSelect && !targetLangSelect.disabled) targetLangSelect.value = settings.translation_language;
 }
 
 // Сохранение настроек при изменении на главной странице
@@ -221,7 +247,7 @@ function setupSettingsAutoSave() {
         };
 
         try {
-            const response = await fetch(`${API_BASE_URL}/user/settings`, {
+            const response = await authFetch(`${API_BASE_URL}/user/settings`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -230,13 +256,13 @@ function setupSettingsAutoSave() {
                 body: JSON.stringify(settings)
             });
 
-            if (!response.ok) {
-                throw new Error(`Ошибка сохранения: ${response.status}`);
+            if (!response || !response.ok) {
+                throw new Error('Settings could not be saved');
             }
 
             // Обновляем локальные настройки
-            localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify(settings));
-            console.log('Настройки сохранены:', settings);
+            const result = await response.json();
+            localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({ ...getUserSettings(), ...result.settings }));
         } catch (error) {
             console.error('Ошибка сохранения настроек:', error);
         }
@@ -295,8 +321,7 @@ if (document.getElementById('loginForm')) {
             password: formData.get('password'),
         };
 
-        statusEl.textContent = 'Вход...';
-        statusEl.className = 'status-bar';
+        setAuthStatus('Вход...');
 
         try {
             const response = await fetch(`${API_BASE_URL}/auth/token/`, {
@@ -309,7 +334,7 @@ if (document.getElementById('loginForm')) {
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Ошибка входа');
+                throw new Error(typeof error.detail === 'string' ? error.detail : 'Ошибка входа');
             }
 
             const result = await response.json();
@@ -324,14 +349,12 @@ if (document.getElementById('loginForm')) {
             // Загружаем настройки пользователя
             await loadUserSettings();
 
-            statusEl.textContent = 'Успешный вход! Перенаправление...';
-            statusEl.className = 'status-bar success';
+            setAuthStatus('Успешный вход! Перенаправление...', {}, 'success');
             setTimeout(() => {
                 window.location.href = 'index.html';
             }, 1000);
         } catch (error) {
-            statusEl.textContent = `Ошибка: ${error.message}`;
-            statusEl.className = 'status-bar error';
+            setAuthStatus('common.error', { message: authText(error.message) }, 'error');
         }
     });
 }
@@ -348,8 +371,7 @@ if (document.getElementById('registerForm')) {
         const confirmPassword = formData.get('confirmPassword');
 
         if (password !== confirmPassword) {
-            statusEl.textContent = 'Пароли не совпадают';
-            statusEl.className = 'status-bar error';
+            setAuthStatus('Пароли не совпадают', {}, 'error');
             return;
         }
 
@@ -359,8 +381,7 @@ if (document.getElementById('registerForm')) {
             password: password,
         };
 
-        statusEl.textContent = 'Регистрация...';
-        statusEl.className = 'status-bar';
+        setAuthStatus('Регистрация...');
 
         try {
             const response = await fetch(`${API_BASE_URL}/auth/register/`, {
@@ -373,7 +394,7 @@ if (document.getElementById('registerForm')) {
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Ошибка регистрации');
+                throw new Error(typeof error.detail === 'string' ? error.detail : 'Ошибка регистрации');
             }
 
             const result = await response.json();
@@ -388,14 +409,12 @@ if (document.getElementById('registerForm')) {
             // Загружаем настройки пользователя
             await loadUserSettings();
 
-            statusEl.textContent = 'Регистрация успешна! Перенаправление...';
-            statusEl.className = 'status-bar success';
+            setAuthStatus('Регистрация успешна! Перенаправление...', {}, 'success');
             setTimeout(() => {
                 window.location.href = 'index.html';
             }, 1000);
         } catch (error) {
-            statusEl.textContent = `Ошибка: ${error.message}`;
-            statusEl.className = 'status-bar error';
+            setAuthStatus('common.error', { message: authText(error.message) }, 'error');
         }
     });
 }
@@ -416,8 +435,7 @@ function initGoogleAuth() {
         } catch (error) {
             const statusEl = document.getElementById('authStatus');
             if (statusEl) {
-                statusEl.textContent = `Ошибка: ${error.message}`;
-                statusEl.className = 'status-bar error';
+                setAuthStatus('common.error', { message: authText(error.message) }, 'error');
             }
         }
     });
@@ -437,12 +455,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateUserUI();
 
     // Загружаем и применяем настройки на главной странице
-    if (window.location.pathname.includes('index.html')) {
+    if (isAuthenticated()) {
         loadUserSettings().then(() => {
             applyUserSettings();
             setupSettingsAutoSave();
-            // Синхронизируем настройки из Redis
-            syncSettingsFromRedis();
+            // The settings GET already reconciles the persistent and cached values.
         });
     }
 });
@@ -451,6 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.auth = {
     getAccessToken,
     getRefreshToken,
+    refreshAccessToken,
     getUserInfo,
     isAuthenticated,
     logout,

@@ -1,61 +1,25 @@
 <!DOCTYPE html>
-<html lang="ru">
-
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход - Web Transcriber</title>
+    <title data-i18n="auth.loginTitle">Welcome back</title>
+    <script src="ui.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
     <div class="container auth-container">
-        <header>
-            <h1>🎙️ Web Transcriber</h1>
-            <p>Войдите в свой аккаунт</p>
-        </header>
+        <header class="app-header"><nav class="workspace-nav" aria-label="Main navigation" data-i18n-aria-label="nav.main"><a href="index.html" data-i18n="nav.workspace">Workspace</a><a href="transcriptions.html" data-i18n="nav.saved">Saved texts</a><a href="profile.html" data-i18n="nav.profile">Profile</a></nav><div class="header-actions"><label class="interface-language"><span class="sr-only" data-i18n="common.interfaceLanguage">Interface language</span><select data-ui-language aria-label="Interface language" data-i18n-aria-label="common.interfaceLanguage"><option value="en">English</option><option value="ru">Русский</option></select></label><label class="theme-toggle"><span data-i18n="theme.label">Dark mode</span><span class="theme-switch"><input type="checkbox" role="switch" data-theme-toggle data-i18n-aria-label="common.themeToggle" aria-label="Switch dark mode" checked><span class="switch-track" aria-hidden="true"></span></span></label></div></header>
 
-        <div class="auth-form">
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
-                </div>
-                <div class="form-group">
-                    <label for="password">Пароль</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <button type="submit" class="button primary">Войти</button>
-            </form>
-
-            <div class="auth-divider">
-                <span>или</span>
-            </div>
-
-            <button id="googleLoginBtn" class="button google-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right: 8px;">
-                    <path fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
-                Войти через Google
-            </button>
-
-            <div class="auth-links">
-                <a href="register.html">Нет аккаунта? Зарегистрироваться</a>
-                <a href="index.html">Вернуться на главную</a>
-            </div>
-        </div>
-
-        <div id="authStatus" class="status-bar"></div>
+<main class="auth-form">
+    <div class="page-heading"><h1 data-i18n="auth.loginTitle">Welcome back</h1><p data-i18n="auth.loginHint">Log in to continue with your texts.</p></div>
+    <form id="loginForm"><div class="form-group"><label for="email" data-i18n="profile.email">Email</label><input type="email" id="email" name="email" autocomplete="email" required></div><div class="form-group"><label for="password" data-i18n="auth.password">Password</label><input type="password" id="password" name="password" autocomplete="current-password" required></div><button type="submit" class="button primary" data-i18n="nav.login">Log in</button></form>
+    <div class="auth-divider"><span data-i18n="auth.or">or</span></div>
+    <button type="button" id="googleLoginBtn" class="button google-btn"><span class="google-mark" aria-hidden="true">G</span><span data-i18n="auth.google">Continue with Google</span></button>
+    <div class="auth-links"><a href="register.html" data-i18n="auth.noAccount">New here? Create an account</a></div>
+    <div id="authStatus" class="status-bar" role="status" aria-live="polite"></div>
+</main>
     </div>
-
     <script src="auth.js"></script>
 </body>
-
 </html>

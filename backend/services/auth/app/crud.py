@@ -119,6 +119,8 @@ def get_user_settings(db: Session, user_id: int):
             tab_audio_enabled=True,
             original_language="RU",
             translation_language="EN",
+            ui_language="en",
+            theme="dark",
             avatar_url=None,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
@@ -162,12 +164,19 @@ def get_user_profile(db: Session, user_id: int):
             "auth_provider": user.auth_provider,
             "created_at": user.created_at,
         },
-        "settings": {
-            "microphone_enabled": settings.microphone_enabled,
-            "tab_audio_enabled": settings.tab_audio_enabled,
-            "original_language": settings.original_language,
-            "translation_language": settings.translation_language,
-            "avatar_url": settings.avatar_url,
-            "updated_at": settings.updated_at,
-        },
+        "settings": user_settings_dict(settings),
+    }
+
+
+def user_settings_dict(settings: models.UserSettings) -> dict:
+    """Full settings snapshot, suitable for both JSON responses and Redis."""
+    return {
+        "microphone_enabled": settings.microphone_enabled,
+        "tab_audio_enabled": settings.tab_audio_enabled,
+        "original_language": settings.original_language,
+        "translation_language": settings.translation_language,
+        "ui_language": settings.ui_language,
+        "theme": settings.theme,
+        "avatar_url": settings.avatar_url,
+        "updated_at": settings.updated_at.isoformat() if settings.updated_at else None,
     }

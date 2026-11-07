@@ -9,7 +9,7 @@ from websockets.client import connect as ws_connect
 
 from backend.shared.token_tracker import get_token_tracker
 
-from .translation_service import translation_service
+from .translation_service import TranslationService
 
 logger = logging.getLogger("UniversalProcessor")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
@@ -78,25 +78,40 @@ class FFmpegStreamer:
                 return b""
         return b""
 
+    async def finish_input(self):
+        """Signal EOF while keeping stdout alive for the last decoded samples."""
+        if self.process and self.process.stdin:
+            try:
+                await self.process.stdin.drain()
+                self.process.stdin.close()
+                await self.process.stdin.wait_closed()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
     async def stop(self):
         if self._stopped:
             return
         self._stopped = True
-
-        if self.process:
+        process = self.process
+        if process is None:
+            return
+        try:
+            if process.stdin:
+                process.stdin.close()
             try:
-                if self.process.stdin:
-                    self.process.stdin.close()
-                self.process.terminate()
-                await self.process.wait()
-            except Exception:
+                await asyncio.wait_for(process.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                process.terminate()
                 try:
-                    self.process.kill()
-                except:
-                    pass
-            finally:
-                self.process = None
-        logger.info("FFmpeg streamer stopped")
+                    await asyncio.wait_for(process.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+        except ProcessLookupError:
+            pass
+        finally:
+            self.process = None
+
 
 
 class UniversalProcessor:
@@ -113,22 +128,38 @@ class UniversalProcessor:
         self.client_ws = client_ws
         self.callback = callback
         self.mode = mode
-        self.language = language if mode == "transcription" else source_lang
-        self.source_lang = source_lang
-        self.target_lang = target_lang
+        # Для режима транскрипции source_lang = language, target_lang = target_lang
+        if mode == "transcription":
+            self.source_lang = language
+            self.target_lang = target_lang if target_lang else ""
+            self.language = language  # язык для DeepGram
+        else:
+            self.source_lang = source_lang if source_lang else ""
+            self.target_lang = target_lang if target_lang else ""
+            self.language = source_lang if source_lang else "RU"
         self.user_id = user_id
+        # Перевод нужен, если указаны оба языка и они отличаются
         self.need_translation = (
-            mode == "translation"
-            and source_lang
-            and target_lang
-            and source_lang.lower() != target_lang.lower()
+            self.source_lang
+            and self.target_lang
+            and self.source_lang.lower() != self.target_lang.lower()
         )
 
         self.ffmpeg_streams: List[FFmpegStreamer] = []
         self.pcm_queues: List[asyncio.Queue] = []
-        self.dg_wss: List[Optional] = []
+        self.dg_wss: List = []
         self.active_tasks: List[asyncio.Task] = []
         self.is_running = True
+        self._stopping = False
+        self._stop_task: Optional[asyncio.Task] = None
+        self.read_tasks: List[asyncio.Task] = []
+        self.deepgram_tasks: List[asyncio.Task] = []
+        self.sender_tasks: List[asyncio.Task] = []
+        self.stop_incomplete = False
+        self.processing_error = False
+        self.stop_timeout = 20.0
+        # Session-owned client and cache: stopping another session cannot close it.
+        self.translation_service = TranslationService()
 
         # Для transcription
         self.dialog_segments: List[dict] = []
@@ -161,7 +192,7 @@ class UniversalProcessor:
 
     async def start(self):
         if self.need_translation:
-            await translation_service.start()
+            await self.translation_service.start()
 
         # Стартуем FFmpeg
         await asyncio.gather(*(f.start() for f in self.ffmpeg_streams))
@@ -172,58 +203,81 @@ class UniversalProcessor:
                 self._ffmpeg_read_loop(self.ffmpeg_streams[i], self.pcm_queues[i])
             )
             self.active_tasks.append(read_task)
+            self.read_tasks.append(read_task)
             dg_task = asyncio.create_task(self._deepgram_loop(i, source))
             self.active_tasks.append(dg_task)
+            self.deepgram_tasks.append(dg_task)
 
     async def _ffmpeg_read_loop(self, ffmpeg: FFmpegStreamer, queue: asyncio.Queue):
-        while self.is_running:
+        while True:
             data = await ffmpeg.read(3200)
-            if data:
-                if queue.full():
-                    try:
-                        queue.get_nowait()
-                    except:
-                        pass
-                await queue.put(data)
-            else:
-                await asyncio.sleep(0.005)
+            if not data:
+                break
+            # Backpressure preserves pending PCM instead of dropping its tail.
+            await queue.put(data)
+        await queue.put(None)  # EOF: sender finalizes only after all queued PCM.
 
     async def _deepgram_loop(self, index: int, source: str):
+        sender = None
         try:
-            # URL Deepgram: diarize только для transcription
             diarize_param = "&diarize=true" if self.mode == "transcription" else ""
             dg_url = (
                 "wss://api.deepgram.com/v1/listen"
                 "?encoding=linear16&sample_rate=16000&channels=1"
                 f"&model=nova-2&language={self.language.lower()}&punctuate=true&smart_format=true"
-                "&endpointing=3500&interim_results=true&speech_final=true"  # Увеличено endpointing
+                "&endpointing=3500&interim_results=true&speech_final=true"
                 f"{diarize_param}"
             )
-
             async with ws_connect(
-                dg_url, extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
+                dg_url, extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
+                open_timeout=10, close_timeout=2,
             ) as ws:
                 self.dg_wss[index] = ws
-                sender = asyncio.create_task(
-                    self._send_loop(ws, self.pcm_queues[index])
-                )
+                sender = asyncio.create_task(self._send_loop(ws, self.pcm_queues[index]))
+                self.sender_tasks.append(sender)
                 async for msg in ws:
                     await self._handle_dg_message(source, msg)
-                await sender
-
-        except Exception as e:
-            logger.error(f"Deepgram error for {source}: {e}")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.processing_error = True
+            logger.warning("Speech provider connection failed for source %s", source)
+            try:
+                await self.client_ws.send_json({
+                    "type": "error", "code": "provider_error",
+                    "message": "The speech service connection was interrupted.",
+                })
+            except Exception:
+                pass
+        finally:
+            if sender is not None:
+                if not sender.done():
+                    sender.cancel()
+                await asyncio.gather(sender, return_exceptions=True)
 
     async def _send_loop(self, ws, queue):
-        while self.is_running:
-            try:
+        try:
+            while True:
                 data = await queue.get()
-                await ws.send(data)
-                queue.task_done()
-            except asyncio.CancelledError:
-                break
+                try:
+                    if data is None:
+                        # Deepgram returns its remaining final results, then closes.
+                        # https://developers.deepgram.com/docs/close-stream
+                        await ws.send(json.dumps({"type": "CloseStream"}))
+                        return
+                    await ws.send(data)
+                finally:
+                    queue.task_done()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.processing_error = True
+            await ws.close()
+            raise
 
     async def process_chunk(self, source: int, webm_data: bytes):
+        if self._stopping:
+            return
         if self.mode == "transcription":
             # Route by source
             if source == 0 and len(self.ffmpeg_streams) > 0:
@@ -251,13 +305,24 @@ class UniversalProcessor:
                     if self.mode == "transcription":
                         # Transcription logic (with speaker)
                         if is_final:
+                            # Если нужен перевод, переводим текст
+                            final_text = transcript
+                            if self.need_translation:
+                                # source_lang и target_lang гарантированно не None, т.к. need_translation истинно
+                                final_text = await self.translation_service.translate(
+                                    transcript,
+                                    self.source_lang,  # type: ignore
+                                    self.target_lang,  # type: ignore
+                                    user_id=self.user_id,
+                                )
+
                             item = {
                                 "speaker": speaker_source,
-                                "text": transcript,
+                                "text": final_text,
                                 "timestamp": current_time,
                             }
                             self._add_to_history(item)
-                            self.callback(transcript, speaker_source)
+                            self.callback(final_text, speaker_source)
 
                             # Трекинг использования DeepGram
                             if self.user_id:
@@ -275,10 +340,16 @@ class UniversalProcessor:
                                     metadata=metadata,
                                 )
 
+                            # Отправляем клиенту текст (переведённый, если требуется)
+                            text_to_send = final_text
+                        else:
+                            # Interim результат - отправляем оригинал (перевод не применяем)
+                            text_to_send = transcript
+
                         await self.client_ws.send_json(
                             {
                                 "type": "transcript",
-                                "text": transcript,
+                                "text": text_to_send,
                                 "speaker": speaker_source,
                                 "is_final": is_final,
                                 "timestamp": current_time.strftime("%H:%M:%S"),
@@ -289,7 +360,7 @@ class UniversalProcessor:
                         # Translation logic (with replacement for cumulative interim and optional translate)
                         full_phrase = transcript.strip()
                         translated = (
-                            await translation_service.translate(
+                            await self.translation_service.translate(
                                 full_phrase,
                                 self.source_lang,
                                 self.target_lang,
@@ -318,11 +389,7 @@ class UniversalProcessor:
                             )
 
                         if is_final:
-                            self.callback(
-                                f"{full_phrase} -> {translated}"
-                                if self.need_translation
-                                else full_phrase
-                            )
+                            self.callback(translated)
                             self.current_phrase = ""
                         else:
                             self.current_phrase = (
@@ -339,8 +406,9 @@ class UniversalProcessor:
                             }
                         )
 
-        except Exception as e:
-            logger.error(f"Error handling DG message: {e}")
+        except Exception:
+            self.processing_error = True
+            logger.warning("Could not process a speech provider message")
 
     def _add_to_history(self, new_item):
         """Для transcription: склейка per speaker"""
@@ -358,45 +426,49 @@ class UniversalProcessor:
             self.dialog_segments.append(new_item)
 
     async def stop(self):
-        if not self.is_running:
-            return
-        self.is_running = False
+        if self._stop_task is None:
+            self._stop_task = asyncio.create_task(self._finish())
+        await asyncio.shield(self._stop_task)
 
-        # Очищаем очереди
-        for q in self.pcm_queues:
-            while not q.empty():
+    async def _finish(self):
+        self._stopping = True
+
+        async def drain():
+            await asyncio.gather(*(stream.finish_input() for stream in self.ffmpeg_streams))
+            # Readers emit EOF sentinels; senders issue CloseStream; receiver loops
+            # stay alive for final provider results and translation callbacks.
+            if self.active_tasks:
+                await asyncio.gather(*self.active_tasks)
+
+        try:
+            await asyncio.wait_for(drain(), timeout=self.stop_timeout)
+        except Exception:
+            self.stop_incomplete = True
+            logger.warning("Audio finalization did not complete; preserving received text")
+        finally:
+            self.stop_incomplete = self.stop_incomplete or self.processing_error
+            self.is_running = False
+            tasks = self.active_tasks + self.sender_tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            sockets = [ws for ws in self.dg_wss if ws is not None]
+            if sockets:
                 try:
-                    q.get_nowait()
-                    q.task_done()
-                except:
-                    break
-
-        # Отменяем задачи
-        for t in self.active_tasks:
-            if not t.done():
-                t.cancel()
-
-        # Ждём завершения
-        if self.active_tasks:
-            try:
-                await asyncio.wait(self.active_tasks, timeout=2.0)
-            except asyncio.TimeoutError:
-                pass
-
-        # Закрываем Deepgram WS
-        await asyncio.gather(
-            *(ws.close() for ws in self.dg_wss if ws),
-            return_exceptions=True,
-        )
-
-        # Останавливаем FFmpeg и translation если нужно
-        stops = [f.stop() for f in self.ffmpeg_streams]
-        if self.need_translation:
-            stops.append(translation_service.stop())
-        await asyncio.gather(*stops, return_exceptions=True)
-
-        self.active_tasks.clear()
-        self.current_phrase = ""
+                    await asyncio.wait_for(
+                        asyncio.gather(*(ws.close() for ws in sockets), return_exceptions=True),
+                        timeout=3.0,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+            await asyncio.gather(*(stream.stop() for stream in self.ffmpeg_streams),
+                                 return_exceptions=True)
+            if self.need_translation:
+                await self.translation_service.stop()
+            self.active_tasks.clear()
+            self.current_phrase = ""
 
     def get_dialog_text(self) -> str:
         """Для transcription: текст диалога"""

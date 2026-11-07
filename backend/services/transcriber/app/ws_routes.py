@@ -104,9 +104,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     if msg_type == "start":
                         current_language = data.get("language", "RU")
-                        current_translate_to = None
+                        current_translate_to = data.get("target_lang")
                         await session_manager.start_worker(
-                            session, mode="transcription", language=current_language
+                            session,
+                            mode="transcription",
+                            language=current_language,
+                            target_lang=current_translate_to,
                         )
                         await websocket.send_json(
                             {"type": "status", "message": "Transcription started"}

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr
 
@@ -60,6 +60,8 @@ class UserSettingsUpdate(BaseModel):
     original_language: Optional[str] = None
     translation_language: Optional[str] = None
     avatar_url: Optional[str] = None
+    ui_language: Literal["en", "ru"] = "en"
+    theme: Literal["dark", "light"] = "dark"
 
     class Config:
         from_attributes = True
@@ -74,6 +76,8 @@ class UserSettingsResponse(BaseModel):
     original_language: str
     translation_language: str
     avatar_url: Optional[str] = None
+    ui_language: Literal["en", "ru"] = "en"
+    theme: Literal["dark", "light"] = "dark"
     updated_at: datetime
 
     class Config:
