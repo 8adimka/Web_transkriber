@@ -65,13 +65,6 @@
                             <option value="EN" data-i18n="language.en">English</option>
                         </select>
                     </div>
-                    <div class="language-setting interface-language">
-                        <label for="uiLanguage" data-i18n="common.interfaceLanguage">Interface language</label>
-                        <select id="uiLanguage" data-ui-language>
-                            <option value="en">English</option>
-                            <option value="ru">Русский</option>
-                        </select>
-                    </div>
                 </div>
                 <div class="toggles" role="group" aria-label="Audio sources" data-i18n-aria-label="audio.sources">
                     <label class="source-toggle"><input type="checkbox" id="useMic"><span data-i18n="audio.microphone">Microphone</span></label>
@@ -127,13 +120,65 @@
                     <p data-i18n="workspace.translationLive">Translation is running in the floating window.</p>
                 </div>
             </section>
-            <section id="readerPanel" class="mode-panel reader-panel" role="tabpanel" aria-labelledby="tabReader" tabindex="0" hidden></section>
+            <section id="readerPanel" class="mode-panel reader-panel" role="tabpanel" aria-labelledby="tabReader" tabindex="0" hidden>
+                <section id="readerImport" class="reader-import" aria-labelledby="readerImportTitle">
+                    <div class="reader-import-heading">
+                        <svg class="reader-import-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 10v29M24 10C16 4 6 8 6 8v29s10-4 18 2c8-6 18-2 18-2V8s-10-4-18 2Z"/><path d="M12 15h6M12 21h6M30 15h6M30 21h6"/></svg>
+                        <h2 id="readerImportTitle" data-i18n="reader.importTitle">A quiet place for your next read</h2>
+                        <p data-i18n="reader.importHint">Paste a text or drop a document here. Click a word or select a phrase to translate it as you read.</p>
+                    </div>
+                    <label class="sr-only" for="readerInput" data-i18n="reader.inputLabel">Text to read</label>
+                    <textarea id="readerInput" rows="7" spellcheck="false" placeholder="Paste text or drop a document here…" data-i18n-placeholder="reader.inputPlaceholder"></textarea>
+                    <input type="file" id="readerFile" accept=".txt,.fb2,.epub,.docx,.pdf,.md,.markdown,.html,.htm" hidden>
+                    <div class="reader-import-footer">
+                        <div class="reader-file-actions">
+                            <button id="readerChooseFile" class="button secondary" type="button"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></svg><span data-i18n="reader.chooseFile">Open document</span></button>
+                            <span class="reader-formats" data-i18n="reader.formats">TXT, FB2, EPUB, DOCX, PDF, Markdown, HTML · up to 10 MB</span>
+                        </div>
+                        <button id="readerRead" class="button primary" type="button" data-i18n="reader.read">Read text</button>
+                    </div>
+                    <p id="readerImportStatus" class="reader-status" role="status" aria-live="polite"></p>
+                </section>
+                <section id="readerBook" class="reader-book" aria-label="Reading view" data-i18n-aria-label="reader.readingView" hidden>
+                    <div class="reader-book-toolbar">
+                        <div class="reader-book-identity"><h2 id="readerTitle" data-i18n="reader.untitled">Untitled text</h2><span id="readerSaveStatus" class="reader-status" role="status" aria-live="polite"></span></div>
+                        <div class="reader-book-actions">
+                            <div class="reader-font-controls" role="group" aria-label="Text size" data-i18n-aria-label="reader.fontSize">
+                                <button id="readerFontDecrease" class="button ghost small" type="button" title="Smaller text" aria-label="Smaller text" data-i18n-title="reader.fontDecrease" data-i18n-aria-label="reader.fontDecrease">A−</button>
+                                <span id="readerFontSize" aria-live="polite">20</span>
+                                <button id="readerFontIncrease" class="button ghost small" type="button" title="Larger text" aria-label="Larger text" data-i18n-title="reader.fontIncrease" data-i18n-aria-label="reader.fontIncrease">A+</button>
+                            </div>
+                            <button id="readerFocus" class="button ghost small" type="button" title="Expand reading view" aria-label="Expand reading view" data-i18n-title="reader.focus" data-i18n-aria-label="reader.focus"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
+                            <button id="readerNew" class="button secondary small" type="button" data-i18n="reader.newText">New text</button>
+                        </div>
+                    </div>
+                    <div id="readerPageFrame" class="reader-page-frame">
+                        <button id="readerSidePrevious" class="reader-side reader-side-previous" type="button" title="Previous page" aria-label="Previous page" data-i18n-title="reader.previous" data-i18n-aria-label="reader.previous"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="m14 6-6 6 6 6"/></svg></button>
+                        <article id="readerPage" class="reader-page" tabindex="0" aria-label="Book page" data-i18n-aria-label="reader.bookPage"></article>
+                        <button id="readerSideNext" class="reader-side reader-side-next" type="button" title="Next page" aria-label="Next page" data-i18n-title="reader.next" data-i18n-aria-label="reader.next"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="m10 6 6 6-6 6"/></svg></button>
+                    </div>
+                    <nav class="reader-pagination" aria-label="Reader pages" data-i18n-aria-label="reader.pagination">
+                        <button id="readerFirst" class="button ghost small" type="button" title="First page" aria-label="First page" data-i18n-title="reader.first" data-i18n-aria-label="reader.first">«</button>
+                        <button id="readerPrevious" class="button ghost small" type="button" title="Previous page" aria-label="Previous page" data-i18n-title="reader.previous" data-i18n-aria-label="reader.previous">‹</button>
+                        <label class="reader-page-field"><span data-i18n="reader.page">Page</span><input type="number" id="readerPageNumber" min="1" value="1" inputmode="numeric" aria-label="Page number" data-i18n-aria-label="reader.pageNumber"><span aria-hidden="true">/</span><span id="readerPageTotal" aria-live="polite">1</span></label>
+                        <button id="readerNext" class="button ghost small" type="button" title="Next page" aria-label="Next page" data-i18n-title="reader.next" data-i18n-aria-label="reader.next">›</button>
+                        <button id="readerLast" class="button ghost small" type="button" title="Last page" aria-label="Last page" data-i18n-title="reader.last" data-i18n-aria-label="reader.last">»</button>
+                    </nav>
+                </section>
+                <aside id="readerPopover" class="reader-popover" role="dialog" aria-label="Translation" data-i18n-aria-label="reader.translation" hidden>
+                    <div class="reader-popover-heading"><span data-i18n="reader.translation">Translation</span><button id="readerPopoverClose" class="button ghost small" type="button" aria-label="Close translation" data-i18n-aria-label="reader.close">×</button></div>
+                    <div id="readerPopoverSource" class="reader-popover-source"></div>
+                    <div id="readerPopoverText" class="reader-popover-text" dir="auto"></div>
+                    <div id="readerPopoverStatus" class="reader-popover-status" role="status" aria-live="polite"></div>
+                </aside>
+            </section>
         </main>
     </div>
     <div id="pipWrapper" style="display: none;">
         <div id="pipContainer" class="pip-container"><div id="pipFinalPhrases" class="pip-final-list"></div><div id="pipInterimPhrase" class="pip-interim"></div></div>
     </div>
     <script src="auth.js"></script>
+    <script src="reader.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

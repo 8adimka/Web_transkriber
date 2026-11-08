@@ -62,6 +62,7 @@ function logout() {
 
 // Обновление токена
 async function performTokenRefresh() {
+    const accountId = getUserInfo()?.id;
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
         logout();
@@ -82,6 +83,7 @@ async function performTokenRefresh() {
         }
 
         const data = await response.json();
+        if (getUserInfo()?.id !== accountId || getRefreshToken() !== refreshToken) return null;
         saveTokens(data.access_token, data.refresh_token, {
             id: data.id,
             email: data.email,
@@ -91,23 +93,33 @@ async function performTokenRefresh() {
         });
         return data.access_token;
     } catch (error) {
-        console.error('Token refresh failed:', error);
-        logout();
+        console.error('Token refresh failed');
+        if (getUserInfo()?.id === accountId && getRefreshToken() === refreshToken) logout();
         return null;
     }
 }
 
 // Share a refresh request when profile, preferences and audio settings load together.
 let refreshRequest = null;
+let refreshRequestAccount = null;
 function refreshAccessToken() {
-    if (!refreshRequest) {
-        refreshRequest = performTokenRefresh().finally(() => { refreshRequest = null; });
+    const account = JSON.stringify([getUserInfo()?.id, getRefreshToken()]);
+    if (!refreshRequest || refreshRequestAccount !== account) {
+        const request = performTokenRefresh().finally(() => {
+            if (refreshRequest === request) refreshRequest = null;
+        });
+        refreshRequestAccount = account;
+        refreshRequest = request;
     }
     return refreshRequest;
 }
 
 // Запрос с автоматическим обновлением токена
 async function authFetch(url, options = {}) {
+    const accountId = getUserInfo()?.id;
+    const requireSameAccount = () => {
+        if (getUserInfo()?.id !== accountId) throw new Error('Account changed during request');
+    };
     let token = getAccessToken();
     if (!token) {
         window.location.href = 'login.html';
@@ -121,12 +133,15 @@ async function authFetch(url, options = {}) {
 
     let response = await fetch(url, { ...options, headers });
 
+    requireSameAccount();
     // Если токен истек, пробуем обновить
     if (response.status === 401) {
         const newToken = await refreshAccessToken();
+        requireSameAccount();
         if (newToken) {
             headers['Authorization'] = `Bearer ${newToken}`;
             response = await fetch(url, { ...options, headers });
+            requireSameAccount();
         } else {
             logout();
             return;

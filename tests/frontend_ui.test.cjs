@@ -213,7 +213,7 @@ test('workspace tabs, translation lifecycle, persisted preferences and secondary
 
         await cdp.evaluate(`document.querySelector('#tabReader').click()`);
         assert.equal(await cdp.evaluate(`document.querySelector('#readerPanel').hidden`),false);
-        assert.equal(await cdp.evaluate(`document.querySelector('#readerPanel').textContent.trim()`),'');
+        assert.equal(await cdp.evaluate(`!!document.querySelector('#readerInput')`),true);
         await cdp.evaluate(`document.querySelector('#tabTranslator').click()`);
         assert.equal(await cdp.evaluate(`document.querySelector('#resultSection').hidden`),true);
         await cdp.evaluate(`document.querySelector('#btnStartTranslation').click()`);

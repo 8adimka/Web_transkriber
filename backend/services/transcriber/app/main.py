@@ -11,6 +11,7 @@ from . import crud, schemas
 from .database import get_db, init_db
 from .dependencies import verify_token
 from .ws_routes import router as ws_router
+from .reader_routes import router as reader_router
 
 app = FastAPI(title="Web Transcriber API")
 
@@ -32,6 +33,7 @@ def startup_event():
 
 # Подключение роутов
 app.include_router(ws_router)
+app.include_router(reader_router)
 app.include_router(rate_limiter_router, tags=["rate-limiter"])
 
 
@@ -46,6 +48,7 @@ def get_transcriptions(
     limit: int = Query(100, ge=1, le=1000),
     token: str = Query(..., description="JWT access token"),
     db: Session = Depends(get_db),
+    preview_chars: int = Query(None, ge=0, le=500),
 ):
     """Получение списка транскрипций пользователя"""
     try:
@@ -66,7 +69,8 @@ def get_transcriptions(
 
     # Получаем транскрипции пользователя
     transcriptions = crud.get_user_transcriptions(
-        db, user_id=int(user_id), skip=skip, limit=limit
+        db, user_id=int(user_id), skip=skip, limit=limit,
+        preview_chars=preview_chars if isinstance(preview_chars, int) else None,
     )
     total = crud.count_user_transcriptions(db, user_id=int(user_id))
 

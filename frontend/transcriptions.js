@@ -62,17 +62,21 @@
             article.dataset.id = String(text.id);
             const header = node('div', 'transcription-header');
             const title = node('div', 'transcription-title');
-            title.append(node('h2', '', formatDate(text.created_at)));
+            const filename = String(text.filename || '');
+            const audioFilename = /^(dialog|transcription)_/i.test(filename);
+            title.append(node('h2', '', !filename || audioFilename ? formatDate(text.created_at) : filename));
             const metadata = String(text.orig_language || '') + (text.translate_to ? ' → ' + String(text.translate_to) : '') + (text.file_size ? ' · ' + formatSize(text.file_size) : '');
             title.append(node('span', 'transcription-meta', metadata));
             const actions = node('div', 'transcription-actions');
             const download = node('button', 'button small secondary', t('common.download'));
             download.type = 'button';
             download.addEventListener('click', () => downloadText(text.id, download));
+            const open = node('a', 'button small secondary', t('reader.open'));
+            open.href = 'index.html?reader=' + encodeURIComponent(text.id);
             const remove = node('button', 'button small danger', t('common.delete'));
             remove.type = 'button';
             remove.addEventListener('click', () => showDeleteModal(text.id));
-            actions.append(download, remove);
+            actions.append(open, download, remove);
             header.append(title, actions);
             const content = String(text.content || '');
             article.append(header, node('p', 'transcription-preview', content.length > 240 ? content.slice(0, 240) + '…' : content));
@@ -111,7 +115,7 @@
         const version = ++requestVersion;
         byId('transcriptionsList').setAttribute('aria-busy', 'true');
         try {
-            const response = await tokenRequest('/transcriptions?skip=' + ((page - 1) * itemsPerPage) + '&limit=' + itemsPerPage);
+            const response = await tokenRequest('/transcriptions?skip=' + ((page - 1) * itemsPerPage) + '&limit=' + itemsPerPage + '&preview_chars=300');
             if (!response.ok) throw new Error('Texts unavailable');
             const data = await response.json();
             if (version !== requestVersion) return;

@@ -90,3 +90,15 @@ python -m unittest discover -s tests -p test_translation_session.py -v
 ```
 
 Auth-набор использует изолированные схемы/SQLite; отдельная проверка миграции005 требует TEST_POSTGRES_DSN на расходуемую PostgreSQL и работает с TEMP TABLE. На этапе реализации миграция upgrade/backfill/downgrade проверена на отдельной PostgreSQL16 tmpfs. Transcriber-набор проверяет final→persist→done, два источника/две сессии, таймаут, сбой БД и настоящий FFmpeg на синтетическом WebM. У наборов разные версии зависимостей; не запускать их в общем окружении через слепое discovery.
+
+## Проверки Reader
+
+```bash
+node --test tests/reader_ui.test.cjs
+python -m unittest discover -s tests -p test_document_import.py -v
+python -m unittest discover -s tests -p test_reader_api.py -v
+```
+
+Python-наборы запускаются в зависимостях transcriber (Python3.11, включая pypdf7 и defusedxml). Импортер проверяет синтетические документы/кодировки/опасные XML и архивы. API использует isolatedSQLite и fake DeepL; опциональный TEST_POSTGRES_DSN только на расходуемую PostgreSQL проверяет сохранность старых строк, конкурентность и cascade.
+
+Браузерный набор использует Chrome и localhost с fake Bearer API, без реальных пользователей и провайдеров. Проверяет чтение всех страниц без потерь/overflow, слово и выделение, облачко и его закрытие, место чтения и reflow, документы из истории, автосохранение/IDB после сбоя и мобайл/focus. Скриншоты проверки `/tmp/web-transcriber-reader-dark.png` и `/tmp/web-transcriber-reader-mobile.png`. Прежний frontend_ui.test.cjs остаётся регрессией аудио/тем/профиля.

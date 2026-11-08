@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from .database import Transcription
@@ -49,16 +49,23 @@ def get_user_transcriptions(
     user_id: int,
     skip: int = 0,
     limit: int = 100,
-) -> List[Transcription]:
+    preview_chars: Optional[int] = None,
+) -> List:
     """Получение списка транскрипций пользователя с пагинацией"""
-    result = db.execute(
-        select(Transcription)
-        .where(Transcription.user_id == user_id)
-        .order_by(desc(Transcription.created_at))
-        .offset(skip)
-        .limit(limit)
-    )
-    return list(result.scalars().all())
+    if preview_chars is None:
+        statement = select(Transcription)
+    else:
+        # Do not materialize entire books merely to display a library preview.
+        statement = select(
+            Transcription.id, Transcription.user_id, Transcription.filename,
+            func.substr(Transcription.content, 1, preview_chars).label("content"),
+            Transcription.orig_language, Transcription.translate_to,
+            Transcription.file_size, Transcription.created_at,
+        )
+    result = db.execute(statement.where(Transcription.user_id == user_id)
+                        .order_by(desc(Transcription.created_at)).offset(skip).limit(limit))
+    return list(result.scalars().all()) if preview_chars is None else list(result.all())
+
 
 
 def delete_transcription(db: Session, transcription_id: int, user_id: int) -> bool:
@@ -74,5 +81,4 @@ def delete_transcription(db: Session, transcription_id: int, user_id: int) -> bo
 
 def count_user_transcriptions(db: Session, user_id: int) -> int:
     """Подсчет количества транскрипций пользователя"""
-    result = db.execute(select(Transcription).where(Transcription.user_id == user_id))
-    return len(result.scalars().all())
+    return db.scalar(select(func.count()).select_from(Transcription).where(Transcription.user_id == user_id)) or 0

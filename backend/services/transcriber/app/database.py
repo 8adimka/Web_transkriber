@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timezone
 from typing import Generator
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, Text, create_engine
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # Получение настроек подключения из переменных окружения
@@ -47,6 +47,27 @@ class Transcription(Base):
         Index("idx_transcriptions_user_id", "user_id"),
         Index("idx_transcriptions_created_at", "created_at"),
     )
+
+
+class ReaderState(Base):
+    """Reading anchors for every saved text; offsets use JavaScript UTF-16 units.
+
+    This is an additive table. Existing transcriptions need no data migration.
+    A creation key is recorded atomically with imported/pasted documents so that
+    retried autosaves cannot create duplicate library entries.
+    """
+
+    __tablename__ = "reader_states"
+
+    transcription_id = Column(Integer, ForeignKey("transcriptions.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    position = Column(Integer, nullable=False, default=0, server_default="0")
+    page = Column(Integer, nullable=False, default=1, server_default="1")
+    position_updated_at_ms = Column(BigInteger, nullable=False, default=0, server_default="0")
+    client_id = Column(String(36), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_reader_user_client"),)
 
 
 def get_db() -> Generator[Session, None, None]:

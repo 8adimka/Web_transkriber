@@ -40,6 +40,7 @@ function setStatus(key, values = {}, error = false) {
 
 function selectMode(mode, focus = false) {
     if (!(mode in panelIds)) return;
+    const previousMode = selectedMode;
     selectedMode = mode;
     document.querySelectorAll('[data-mode]').forEach(tab => {
         const selected = tab.dataset.mode === mode;
@@ -55,11 +56,16 @@ function selectMode(mode, focus = false) {
     }
     updateWorkspace();
     renderResults();
+    if (mode === 'reader') window.Reader.onActivate();
+    else if (previousMode === 'reader') window.Reader.onDeactivate();
 }
 
 function updateWorkspace() {
     const running = !!activeSession;
     const stopping = running && activeSession.stopping;
+    const toolbar = document.querySelector('.workspace-toolbar');
+    toolbar.hidden = selectedMode === 'reader' && !running;
+    toolbar.dataset.hasSession = String(running);
     btnStart.disabled = running;
     btnStartTranslation.disabled = running;
     btnStart.hidden = selectedMode !== 'transcription' || running;
@@ -606,4 +612,5 @@ window.addEventListener('pagehide', () => {
 });
 if (!window.auth.isAuthenticated()) window.location.href = 'login.html';
 loadDevices();
-selectMode('transcription');
+const initialWorkspace = new URL(location.href).searchParams;
+selectMode(initialWorkspace.has('reader') || initialWorkspace.get('mode') === 'reader' ? 'reader' : 'transcription');

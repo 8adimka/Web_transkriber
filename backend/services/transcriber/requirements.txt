@@ -12,3 +12,5 @@ sqlalchemy==2.0.29
 psycopg2-binary==2.9.7
 alembic==1.13.1
 pydantic==1.10.13
+defusedxml==0.7.1
+pypdf==7.0.0
